@@ -1,5 +1,5 @@
+// src/controllers/kyc.controller.js
 const kycService = require('../services/kyc.service')
-const { v4: uuidv4 } = require('uuid')
 
 class KYCController {
   // Upload KYC document
@@ -53,7 +53,7 @@ class KYCController {
         userAgent: req.get('User-Agent')
       })
       
-      // Queue for auto verification (in production, use a job queue)
+      // Queue for auto verification
       setTimeout(async () => {
         try {
           await kycService.autoVerifyKYCDocument(kycDocument.id)
@@ -109,7 +109,7 @@ class KYCController {
     }
   }
   
-  // Get KYC document details (user or admin)
+  // Get KYC document details
   async getKYCDocument(req, res) {
     try {
       const { kycId } = req.params
@@ -123,7 +123,8 @@ class KYCController {
       }
       
       // Don't include sensitive data for non-admin users unless it's their own
-      const isAdmin = req.user.isAdmin || req.user.role === 'admin'
+      const userEmail = req.user.email || ''
+      const isAdmin = userEmail.includes('admin') || userEmail === process.env.ADMIN_EMAIL
       const isOwner = document.user_id === req.user.id
       
       if (!isAdmin && !isOwner) {
@@ -305,7 +306,7 @@ class KYCController {
     }
   }
   
-  // Get KYC statistics (admin only)
+  // Get KYC statistics
   async getKYCStats(req, res) {
     try {
       const db = require('../config/db')
@@ -347,4 +348,16 @@ class KYCController {
   }
 }
 
-module.exports = new KYCController()
+// Create instance and export all methods
+const kycController = new KYCController()
+
+module.exports = {
+  uploadDocument: kycController.uploadDocument.bind(kycController),
+  getKYCStatus: kycController.getKYCStatus.bind(kycController),
+  getKYCDocument: kycController.getKYCDocument.bind(kycController),
+  getPendingKYC: kycController.getPendingKYC.bind(kycController),
+  approveKYC: kycController.approveKYC.bind(kycController),
+  rejectKYC: kycController.rejectKYC.bind(kycController),
+  runAutoVerification: kycController.runAutoVerification.bind(kycController),
+  getKYCStats: kycController.getKYCStats.bind(kycController)
+}

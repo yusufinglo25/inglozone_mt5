@@ -3,7 +3,7 @@ const router = express.Router()
 const controller = require('../controllers/wallet.controller')
 const authMiddleware = require('../middleware/auth.middleware') 
 
-router.use(authMiddleware)
+router.use(authMiddleware.verifyToken)
 
 router.get('/balance', controller.getWallet)
 router.post('/deposit', controller.createDeposit)

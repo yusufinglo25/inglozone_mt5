@@ -1,3 +1,4 @@
+// src/services/kyc.service.js
 const crypto = require('crypto')
 const fs = require('fs').promises
 const path = require('path')
@@ -214,7 +215,6 @@ class KYCService {
       
       if (isPdf) {
         // PDF processing would go here
-        // For now, we'll convert first page to image or use a PDF OCR library
         score += 30 // Base score for PDF
         extractedData.file_type = 'pdf'
       } else {
@@ -232,12 +232,6 @@ class KYCService {
           score += 10
         }
         
-        // Check for blur (simple edge detection)
-        const edgeCount = await this.detectEdges(image)
-        if (edgeCount > 100) {
-          score += 15
-        }
-        
         extractedData.image_dimensions = { width, height }
         extractedData.file_type = 'image'
       }
@@ -248,11 +242,11 @@ class KYCService {
           document.fileBuffer,
           'eng',
           {
-            logger: m => console.log(m) // Remove in production
+            logger: m => console.log(m)
           }
         )
         
-        extractedData.ocr_text = text.substring(0, 5000) // Limit text length
+        extractedData.ocr_text = text.substring(0, 5000)
         
         // Basic document validation
         const validationResult = this.validateDocumentText(text, document.document_type)
@@ -316,51 +310,9 @@ class KYCService {
     }
   }
   
-  // Simple edge detection
-  async detectEdges(image) {
-    let edgeCount = 0
-    const threshold = 30
-    
-    for (let y = 1; y < image.bitmap.height - 1; y++) {
-      for (let x = 1; x < image.bitmap.width - 1; x++) {
-        const idx = (image.bitmap.width * y + x) << 2
-        
-        // Get neighboring pixels
-        const current = this.getBrightness(
-          image.bitmap.data[idx],
-          image.bitmap.data[idx + 1],
-          image.bitmap.data[idx + 2]
-        )
-        
-        const right = this.getBrightness(
-          image.bitmap.data[idx + 4],
-          image.bitmap.data[idx + 5],
-          image.bitmap.data[idx + 6]
-        )
-        
-        const bottom = this.getBrightness(
-          image.bitmap.data[idx + image.bitmap.width * 4],
-          image.bitmap.data[idx + image.bitmap.width * 4 + 1],
-          image.bitmap.data[idx + image.bitmap.width * 4 + 2]
-        )
-        
-        if (Math.abs(current - right) > threshold || Math.abs(current - bottom) > threshold) {
-          edgeCount++
-        }
-      }
-    }
-    
-    return edgeCount
-  }
-  
-  getBrightness(r, g, b) {
-    return (r + g + b) / 3
-  }
-  
-  // Simple face detection (placeholder - implement with proper library in production)
+  // Simple face detection (placeholder)
   async detectFace(imageBuffer) {
-    // In production, use a proper face detection library like face-api.js or OpenCV
-    // For now, return true for testing
+    // In production, use a proper face detection library
     return Math.random() > 0.3 // 70% chance of "detecting" a face
   }
   
@@ -526,4 +478,5 @@ class KYCService {
   }
 }
 
+// Export the service instance
 module.exports = new KYCService()

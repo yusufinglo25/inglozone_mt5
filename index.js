@@ -19,7 +19,7 @@ const specs = swaggerJsdoc(options)
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs))
 // app.use(passport.initialize()) // Comment out for now
 
-// 1. FIRST: Global CORS headers middleware
+// 1. Global CORS headers middleware
 app.use((req, res, next) => {
   const allowedOrigins = ['https://customer-panel-inglo.vercel.app', 'http://localhost:5173']
   const origin = req.headers.origin
@@ -40,7 +40,7 @@ app.use((req, res, next) => {
   next()
 })
 
-// 2. CORS middleware (simplified - don't use app.options)
+// 2. CORS middleware
 app.use(cors({
   origin: ['https://customer-panel-inglo.vercel.app', 'http://localhost:5173'],
   credentials: true
@@ -79,7 +79,7 @@ const authRoutes = require('./src/routes/auth.routes')
 const userRoutes = require('./src/routes/user.routes')
 const walletRoutes = require('./src/routes/wallet.routes')
 const webhookRoutes = require('./src/webhooks/stripe.webhook')
-// const kycRoutes = require('./src/routes/kyc.routes')
+const kycRoutes = require('./src/routes/kyc.routes')
 
 // Use routes
 app.use('/api/user', userRoutes)
@@ -87,7 +87,7 @@ app.use('/api/accounts', accountRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/wallet', walletRoutes)
 app.use('/api/webhooks', webhookRoutes)
-// app.use('/api/kyc', kycRoutes)
+app.use('/api/kyc', kycRoutes)
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -124,5 +124,6 @@ const PORT = process.env.PORT || 4000
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`)
   console.log(`CORS enabled for origins: https://customer-panel-inglo.vercel.app, http://localhost:5173`)
+  console.log(`KYC routes: /api/kyc/*`)
   console.log(`Test endpoint: https://temp.inglozone.com/api/test-cors`)
 })
