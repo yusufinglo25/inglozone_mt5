@@ -137,6 +137,9 @@ function createWalletTables() {
         
         // Now add foreign keys if they don't exist
         addForeignKeys()
+        
+        // Create KYC tables after wallet tables
+        createKYCTables()
       }
     })
   })
@@ -233,6 +236,71 @@ function addForeignKeys() {
     
     checkAndAddColumns(addColumns, 0)
   }, 2000)
+}
+
+function createKYCTables() {
+  console.log('Creating KYC tables...')
+  
+  const kycTable = `
+    CREATE TABLE IF NOT EXISTS kyc_documents (
+      id VARCHAR(36) PRIMARY KEY,
+      user_id VARCHAR(36) NOT NULL,
+      document_type ENUM('passport', 'national_id') NOT NULL,
+      original_filename VARCHAR(255) NOT NULL,
+      encrypted_file_path VARCHAR(500) NOT NULL,
+      iv VARCHAR(64) NOT NULL,
+      auth_tag VARCHAR(64) NOT NULL,
+      status ENUM('PENDING', 'AUTO_VERIFIED', 'APPROVED', 'REJECTED') DEFAULT 'PENDING',
+      extracted_data JSON,
+      auto_score INT DEFAULT 0,
+      admin_comment TEXT,
+      reviewed_by VARCHAR(36),
+      reviewed_at TIMESTAMP NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_user_id (user_id),
+      INDEX idx_status (status),
+      INDEX idx_created_at (created_at),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `
+  
+  const auditTable = `
+    CREATE TABLE IF NOT EXISTS kyc_audit_logs (
+      id VARCHAR(36) PRIMARY KEY,
+      kyc_document_id VARCHAR(36) NOT NULL,
+      user_id VARCHAR(36) NOT NULL,
+      action ENUM('UPLOAD', 'AUTO_VERIFY', 'MANUAL_APPROVE', 'MANUAL_REJECT', 'DELETE') NOT NULL,
+      details JSON,
+      ip_address VARCHAR(45),
+      user_agent TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_kyc_document_id (kyc_document_id),
+      INDEX idx_user_id (user_id),
+      INDEX idx_action (action),
+      FOREIGN KEY (kyc_document_id) REFERENCES kyc_documents(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `
+  
+  // Create kyc_documents table
+  db.query(kycTable, (err) => {
+    if (err) {
+      console.error('❌ Error creating kyc_documents table:', err.message)
+    } else {
+      console.log('✅ kyc_documents table ready')
+      
+      // Create audit logs table
+      db.query(auditTable, (err) => {
+        if (err) {
+          console.error('❌ Error creating kyc_audit_logs table:', err.message)
+        } else {
+          console.log('✅ kyc_audit_logs table ready')
+        }
+      })
+    }
+  })
 }
 
 // Helper function to check and add columns one by one

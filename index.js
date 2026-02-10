@@ -9,7 +9,7 @@ const migrate = require('./src/config/migrate')
 migrate()
 const passport = require('passport')
 require('./src/config/google')
-
+const kycRoutes = require('./src/routes/kyc.routes')
 // Start cleanup job (comment out in development if needed)
 if (process.env.NODE_ENV === 'production') {
   require('./src/jobs/cleanup')
@@ -19,11 +19,13 @@ const specs = swaggerJsdoc(options)
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs))
 app.use(passport.initialize())
-
+app.use('/api/kyc', kycRoutes)
 // CORS Configuration - Allow multiple origins
 app.use(cors({
   origin: ['https://customer-panel-inglo.vercel.app', 'http://localhost:5173'],
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }))
 
 // Regular JSON parsing for all routes except webhooks

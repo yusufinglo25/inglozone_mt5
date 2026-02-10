@@ -1,6 +1,8 @@
 const db = require('../config/db')
 const cron = require('node-cron')
+const kycCleanupJob = require('./kyc-cleanup')
 
+if (process.env.NODE_ENV === 'production') {
 // Clean up expired OTPs every hour
 cron.schedule('0 * * * *', () => {
   console.log('Running OTP cleanup job...')
@@ -20,5 +22,7 @@ cron.schedule('0 * * * *', () => {
     }
   })
 })
+ kycCleanupJob.start()
+}
 
 module.exports = cron
