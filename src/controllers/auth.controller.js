@@ -1,11 +1,21 @@
 const service = require('../services/auth.service')
 
+// Helper function to add CORS headers
+const addCorsHeaders = (res, req) => {
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || 'https://customer-panel-inglo.vercel.app');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Expose-Headers', 'Authorization');
+  return res;
+};
+
 // OLD FUNCTIONS - KEEP AS IS (commented out since we're using OTP now)
 exports.register = async (req, res) => {
   try {
     const user = await service.register(req.body)
+    res = addCorsHeaders(res, req);
     res.json(user)
   } catch (err) {
+    res = addCorsHeaders(res, req);
     res.status(400).json({ error: err.message })
   }
 }
@@ -13,8 +23,10 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const result = await service.login(req.body)
+    res = addCorsHeaders(res, req);
     res.json(result)
   } catch (err) {
+    res = addCorsHeaders(res, req);
     res.status(401).json({ error: err.message })
   }
 }
@@ -25,12 +37,14 @@ exports.registerWithOTP = async (req, res) => {
     const { firstName, lastName, email, password } = req.body
     
     if (!firstName || !lastName || !email || !password) {
+      res = addCorsHeaders(res, req);
       return res.status(400).json({ 
         error: 'All fields are required' 
       })
     }
     
     if (password.length < 6) {
+      res = addCorsHeaders(res, req);
       return res.status(400).json({ 
         error: 'Password must be at least 6 characters' 
       })
@@ -43,8 +57,10 @@ exports.registerWithOTP = async (req, res) => {
       password
     })
     
+    res = addCorsHeaders(res, req);
     res.status(200).json(result)
   } catch (err) {
+    res = addCorsHeaders(res, req);
     res.status(400).json({ error: err.message })
   }
 }
@@ -54,20 +70,24 @@ exports.verifyOTP = async (req, res) => {
     const { tempToken, otp } = req.body
     
     if (!tempToken || !otp) {
+      res = addCorsHeaders(res, req);
       return res.status(400).json({ 
         error: 'OTP and verification token are required' 
       })
     }
     
     if (!/^\d{6}$/.test(otp)) {
+      res = addCorsHeaders(res, req);
       return res.status(400).json({ 
         error: 'OTP must be a 6-digit number' 
       })
     }
     
     const result = await service.verifyRegistrationOTP(tempToken, otp)
+    res = addCorsHeaders(res, req);
     res.status(201).json(result)
   } catch (err) {
+    res = addCorsHeaders(res, req);
     res.status(400).json({ error: err.message })
   }
 }
@@ -77,14 +97,17 @@ exports.resendOTP = async (req, res) => {
     const { tempToken } = req.body
     
     if (!tempToken) {
+      res = addCorsHeaders(res, req);
       return res.status(400).json({ 
         error: 'Verification token is required' 
       })
     }
     
     const result = await service.resendRegistrationOTP(tempToken)
+    res = addCorsHeaders(res, req);
     res.status(200).json(result)
   } catch (err) {
+    res = addCorsHeaders(res, req);
     res.status(400).json({ error: err.message })
   }
 }
@@ -95,6 +118,7 @@ exports.checkEmail = async (req, res) => {
     const { email } = req.body
     
     if (!email) {
+      res = addCorsHeaders(res, req);
       return res.status(400).json({ 
         error: 'Email is required' 
       })
@@ -103,6 +127,7 @@ exports.checkEmail = async (req, res) => {
     const result = await service.checkEmail(email)
     
     if (result.exists) {
+      res = addCorsHeaders(res, req);
       return res.status(200).json({
         success: false,
         error: `Email already registered with ${result.user.provider} authentication`,
@@ -111,12 +136,14 @@ exports.checkEmail = async (req, res) => {
       })
     }
     
+    res = addCorsHeaders(res, req);
     res.status(200).json({
       success: true,
       message: 'Email is available',
       exists: false
     })
   } catch (error) {
+    res = addCorsHeaders(res, req);
     res.status(500).json({ error: error.message })
   }
 }
@@ -126,12 +153,14 @@ exports.completeProfile = async (req, res) => {
     const { userId, firstName, lastName, password } = req.body
     
     if (!userId || !firstName || !lastName || !password) {
+      res = addCorsHeaders(res, req);
       return res.status(400).json({ 
         error: 'All fields are required' 
       })
     }
     
     if (password.length < 6) {
+      res = addCorsHeaders(res, req);
       return res.status(400).json({ 
         error: 'Password must be at least 6 characters' 
       })
@@ -143,8 +172,10 @@ exports.completeProfile = async (req, res) => {
       password
     })
     
+    res = addCorsHeaders(res, req);
     res.status(200).json(result)
   } catch (error) {
+    res = addCorsHeaders(res, req);
     res.status(400).json({ error: error.message })
   }
 }
