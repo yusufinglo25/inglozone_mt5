@@ -3,7 +3,9 @@ const router = express.Router()
 const kycController = require('../controllers/kyc.controller')
 const authMiddleware = require('../middleware/auth.middleware')
 const kycMiddleware = require('../middleware/kyc.middleware')
-const { uploadSingle, uploadRateLimit } = require('../middleware/upload.middleware')
+
+// Import upload middleware - FIXED
+const uploadMiddleware = require('../middleware/upload.middleware')
 
 /**
  * @swagger
@@ -52,8 +54,8 @@ router.post(
   '/upload',
   authMiddleware.verifyToken,
   kycMiddleware.checkExistingKYC,
-  uploadRateLimit,
-  uploadSingle,
+  uploadMiddleware.uploadRateLimit,
+  uploadMiddleware.uploadSingle,
   kycController.uploadDocument
 )
 

@@ -37,7 +37,7 @@ const upload = multer({
 // Rate limiting middleware for uploads
 const uploadRateLimit = async (req, res, next) => {
   try {
-    const userId = req.user.id
+    const userId = req.user?.id
     
     if (!userId) {
       return res.status(401).json({
@@ -54,9 +54,10 @@ const uploadRateLimit = async (req, res, next) => {
   }
 }
 
-// Single file upload middleware
+// Single file upload middleware - MUST be a function
 const uploadSingle = upload.single('document')
 
+// Export as an object
 module.exports = {
   uploadSingle,
   uploadRateLimit

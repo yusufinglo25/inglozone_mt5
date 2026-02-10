@@ -79,7 +79,7 @@ const authRoutes = require('./src/routes/auth.routes')
 const userRoutes = require('./src/routes/user.routes')
 const walletRoutes = require('./src/routes/wallet.routes')
 const webhookRoutes = require('./src/webhooks/stripe.webhook')
-const kycRoutes = require('./src/routes/kyc.routes')
+// const kycRoutes = require('./src/routes/kyc.routes')
 
 // Use routes
 app.use('/api/user', userRoutes)
@@ -87,7 +87,7 @@ app.use('/api/accounts', accountRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/wallet', walletRoutes)
 app.use('/api/webhooks', webhookRoutes)
-app.use('/api/kyc', kycRoutes)
+// app.use('/api/kyc', kycRoutes)
 
 // Error handling middleware
 app.use((err, req, res, next) => {
