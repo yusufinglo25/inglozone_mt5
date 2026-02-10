@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken')
 const app = express()
 const migrate = require('./src/config/migrate')
 migrate()
-const passport = require('passport')
+// const passport = require('passport') // Comment out for now
 
 // Start cleanup job (comment out in development if needed)
 if (process.env.NODE_ENV === 'production') {
@@ -17,30 +17,34 @@ if (process.env.NODE_ENV === 'production') {
 const specs = swaggerJsdoc(options)
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs))
-app.use(passport.initialize())
+// app.use(passport.initialize()) // Comment out for now
 
-// CORS Configuration - SIMPLIFIED
-const corsOptions = {
-  origin: ['https://customer-panel-inglo.vercel.app', 'http://localhost:5173'],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  optionsSuccessStatus: 200
-}
-
-// Apply CORS middleware
-app.use(cors(corsOptions))
-
-// Handle preflight requests for ALL routes
-app.options('*', cors(corsOptions)) // FIXED LINE - Use cors middleware
-
-// Global CORS headers for all responses
+// 1. FIRST: Global CORS headers middleware
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://customer-panel-inglo.vercel.app')
+  const allowedOrigins = ['https://customer-panel-inglo.vercel.app', 'http://localhost:5173']
+  const origin = req.headers.origin
+  
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin)
+  }
+  
   res.header('Access-Control-Allow-Credentials', 'true')
-  res.header('Access-Control-Expose-Headers', 'Authorization')
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin')
+  
+  // Handle preflight OPTIONS requests
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end()
+  }
+  
   next()
 })
+
+// 2. CORS middleware (simplified - don't use app.options)
+app.use(cors({
+  origin: ['https://customer-panel-inglo.vercel.app', 'http://localhost:5173'],
+  credentials: true
+}))
 
 // Regular JSON parsing for all routes except webhooks
 app.use((req, res, next) => {
@@ -57,6 +61,16 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
+
+// Test endpoint
+app.get('/api/test-cors', (req, res) => {
+  res.json({
+    success: true,
+    message: 'CORS is working!',
+    origin: req.headers.origin,
+    timestamp: new Date().toISOString()
+  })
 })
 
 // Import routes
@@ -77,10 +91,15 @@ app.use('/api/kyc', kycRoutes)
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Server Error:', err.stack)
+  console.error('Server Error:', err.message)
   
   // Add CORS headers to error responses too
-  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://customer-panel-inglo.vercel.app')
+  const allowedOrigins = ['https://customer-panel-inglo.vercel.app', 'http://localhost:5173']
+  const origin = req.headers.origin
+  
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin)
+  }
   res.header('Access-Control-Allow-Credentials', 'true')
   
   res.status(500).json({
@@ -91,7 +110,12 @@ app.use((err, req, res, next) => {
 
 // 404 handler with CORS headers
 app.use((req, res) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://customer-panel-inglo.vercel.app')
+  const allowedOrigins = ['https://customer-panel-inglo.vercel.app', 'http://localhost:5173']
+  const origin = req.headers.origin
+  
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin)
+  }
   res.header('Access-Control-Allow-Credentials', 'true')
   res.status(404).json({ error: 'Route not found' })
 })
@@ -100,5 +124,5 @@ const PORT = process.env.PORT || 4000
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`)
   console.log(`CORS enabled for origins: https://customer-panel-inglo.vercel.app, http://localhost:5173`)
-  console.log(`Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`)
+  console.log(`Test endpoint: https://temp.inglozone.com/api/test-cors`)
 })
