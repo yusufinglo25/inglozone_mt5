@@ -9,12 +9,12 @@ const migrate = require('./src/config/migrate')
 migrate()
 const passport = require('passport')
 require('./src/config/google')
-const kycRoutes = require('./src/routes/kyc.routes')
+
 // Start cleanup job (comment out in development if needed)
 if (process.env.NODE_ENV === 'production') {
   require('./src/jobs/cleanup')
 }
-
+const kycRoutes = require('./src/routes/kyc.routes')
 const specs = swaggerJsdoc(options)
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs))
