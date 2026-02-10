@@ -19,28 +19,22 @@ const specs = swaggerJsdoc(options)
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs))
 app.use(passport.initialize())
 
-// 1. FIRST: Handle preflight OPTIONS requests BEFORE CORS
-app.options('*', (req, res) => {
-  console.log('Handling OPTIONS preflight request for:', req.originalUrl)
-  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://customer-panel-inglo.vercel.app')
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin')
-  res.header('Access-Control-Allow-Credentials', 'true')
-  res.header('Access-Control-Max-Age', '86400')
-  res.status(200).end()
-})
-
-// 2. CORS Configuration - SIMPLIFIED VERSION
+// CORS Configuration - SIMPLIFIED
 const corsOptions = {
   origin: ['https://customer-panel-inglo.vercel.app', 'http://localhost:5173'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  optionsSuccessStatus: 200
 }
 
+// Apply CORS middleware
 app.use(cors(corsOptions))
 
-// 3. Global CORS headers for all responses
+// Handle preflight requests for ALL routes
+app.options('*', cors(corsOptions)) // FIXED LINE - Use cors middleware
+
+// Global CORS headers for all responses
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://customer-panel-inglo.vercel.app')
   res.header('Access-Control-Allow-Credentials', 'true')
