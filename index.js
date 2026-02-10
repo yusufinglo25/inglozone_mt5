@@ -1,6 +1,6 @@
 require('dotenv').config()
 const express = require('express')
-// const cors = require('cors')
+const cors = require('cors')
 const { swaggerJsdoc, swaggerUi, options } = require('./src/config/swagger')
 const jwt = require('jsonwebtoken')
 
@@ -21,10 +21,10 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs))
 app.use(passport.initialize())
 app.use('/api/kyc', kycRoutes)
 // CORS Configuration - Allow multiple origins
-// app.use(cors({
-//   origin: ['https://customer-panel-inglo.vercel.app', 'http://localhost:5173'],
-//   credentials: true
-// }))
+app.use(cors({
+  origin: ['*'],
+  credentials: true
+}))
 
 // Regular JSON parsing for all routes except webhooks
 app.use((req, res, next) => {
