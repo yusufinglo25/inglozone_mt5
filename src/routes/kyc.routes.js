@@ -1,4 +1,4 @@
-// src/routes/kyc.routes.js
+// src/routes/kyc.routes.js - UPDATED WITH AUTO-FILL
 const express = require('express')
 const router = express.Router()
 
@@ -35,6 +35,58 @@ router.get(
   kycController.getKYCDocument
 )
 
+// Get auto-fill data from KYC document
+router.get(
+  '/documents/:kycId/auto-fill',
+  authMiddleware.verifyToken,
+  kycMiddleware.checkKYCOwnershipOrAdmin,
+  kycController.getAutoFillData
+)
+
+// ========== KYC PROFILE ROUTES ==========
+
+// Save/update KYC profile
+router.post(
+  '/profile',
+  authMiddleware.verifyToken,
+  kycController.saveProfile
+)
+
+// Save KYC profile with auto-fill from document
+router.post(
+  '/profile/auto-fill',
+  authMiddleware.verifyToken,
+  kycController.saveProfileWithAutoFill
+)
+
+// Get auto-fill suggestions
+router.get(
+  '/profile/auto-fill/suggestions',
+  authMiddleware.verifyToken,
+  kycController.getAutoFillSuggestions
+)
+
+// Submit KYC profile for review
+router.post(
+  '/profile/submit',
+  authMiddleware.verifyToken,
+  kycController.submitProfile
+)
+
+// Get KYC profile
+router.get(
+  '/profile',
+  authMiddleware.verifyToken,
+  kycController.getProfile
+)
+
+// Get KYC completion status
+router.get(
+  '/completion',
+  authMiddleware.verifyToken,
+  kycController.getCompletionStatus
+)
+
 // ========== ADMIN ROUTES ==========
 
 // Get pending KYC documents
@@ -53,7 +105,7 @@ router.get(
   kycController.getKYCStats
 )
 
-// Approve KYC
+// Approve KYC document
 router.post(
   '/admin/:kycId/approve',
   authMiddleware.verifyToken,
@@ -61,7 +113,7 @@ router.post(
   kycController.approveKYC
 )
 
-// Reject KYC
+// Reject KYC document
 router.post(
   '/admin/:kycId/reject',
   authMiddleware.verifyToken,
@@ -75,6 +127,22 @@ router.post(
   authMiddleware.verifyToken,
   kycMiddleware.isAdmin,
   kycController.runAutoVerification
+)
+
+// Get all KYC profiles (admin)
+router.get(
+  '/admin/profiles',
+  authMiddleware.verifyToken,
+  kycMiddleware.isAdmin,
+  kycController.getAllProfiles
+)
+
+// Update KYC profile status (admin)
+router.post(
+  '/admin/profiles/:profileId/status',
+  authMiddleware.verifyToken,
+  kycMiddleware.isAdmin,
+  kycController.updateProfileStatus
 )
 
 module.exports = router

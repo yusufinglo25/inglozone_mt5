@@ -163,6 +163,250 @@ class KYCController {
     }
   }
   
+  // Get auto-fill data from KYC document
+  async getAutoFillData(req, res) {
+    try {
+      const { kycId } = req.params
+      const userId = req.user.id
+      
+      // Check if user owns this KYC document
+      const kycDocument = await kycService.getKYCDocumentById(kycId)
+      
+      if (!kycDocument) {
+        return res.status(404).json({
+          error: 'KYC document not found'
+        })
+      }
+      
+      if (kycDocument.user_id !== userId) {
+        return res.status(403).json({
+          error: 'You do not have permission to access this document'
+        })
+      }
+      
+      const autoFillData = await kycService.getAutoFillData(kycId)
+      
+      if (!autoFillData) {
+        return res.status(404).json({
+          success: false,
+          message: 'No auto-fill data available for this document'
+        })
+      }
+      
+      res.json({
+        success: true,
+        data: autoFillData
+      })
+      
+    } catch (error) {
+      console.error('Error getting auto-fill data:', error)
+      res.status(500).json({
+        error: 'Failed to get auto-fill data',
+        message: process.env.NODE_ENV === 'development' ? error.message : undefined
+      })
+    }
+  }
+  
+  // Get auto-fill suggestions from user's documents
+  async getAutoFillSuggestions(req, res) {
+    try {
+      const userId = req.user.id
+      const kycProfileService = require('../services/kyc-profile.service')
+      
+      const suggestions = await kycProfileService.getAutoFillSuggestions(userId)
+      
+      res.json({
+        success: suggestions.success,
+        data: suggestions
+      })
+      
+    } catch (error) {
+      console.error('Error getting auto-fill suggestions:', error)
+      res.status(500).json({
+        error: 'Failed to get auto-fill suggestions',
+        message: process.env.NODE_ENV === 'development' ? error.message : undefined
+      })
+    }
+  }
+  
+  // Save KYC profile with auto-fill
+  async saveProfileWithAutoFill(req, res) {
+    try {
+      const userId = req.user.id
+      const { kycId, profileData, useAutoFill = true } = req.body
+      
+      const kycProfileService = require('../services/kyc-profile.service')
+      
+      // If useAutoFill is true and we have kycId, get auto-fill data
+      if (useAutoFill && kycId) {
+        const autoFillData = await kycService.getAutoFillData(kycId)
+        
+        if (autoFillData && autoFillData.extractedData) {
+          // Merge auto-fill data with user-provided data (user data takes priority)
+          const mergedData = {
+            ...autoFillData.extractedData,
+            ...profileData
+          }
+          
+          // Validate merged data
+          const validationErrors = kycProfileService.validateProfileData(mergedData)
+          
+          if (validationErrors.length > 0) {
+            return res.status(400).json({
+              error: 'Validation failed',
+              details: validationErrors,
+              used_auto_fill: true
+            })
+          }
+          
+          const result = await kycProfileService.saveProfile(userId, mergedData)
+          
+          return res.json({
+            success: true,
+            message: result.message,
+            used_auto_fill: true,
+            auto_fill_fields: Object.keys(autoFillData.extractedData),
+            data: result
+          })
+        }
+      }
+      
+      // If no auto-fill or auto-fill failed, use only user data
+      const validationErrors = kycProfileService.validateProfileData(profileData)
+      
+      if (validationErrors.length > 0) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: validationErrors,
+          used_auto_fill: false
+        })
+      }
+      
+      const result = await kycProfileService.saveProfile(userId, profileData)
+      
+      res.json({
+        success: true,
+        message: result.message,
+        used_auto_fill: false,
+        data: result
+      })
+      
+    } catch (error) {
+      console.error('Error saving KYC profile with auto-fill:', error)
+      res.status(500).json({
+        error: 'Failed to save KYC profile',
+        message: process.env.NODE_ENV === 'development' ? error.message : undefined
+      })
+    }
+  }
+  
+  // Save KYC profile
+  async saveProfile(req, res) {
+    try {
+      const userId = req.user.id
+      const profileData = req.body
+      
+      // Validate profile data
+      const kycProfileService = require('../services/kyc-profile.service')
+      const validationErrors = kycProfileService.validateProfileData(profileData)
+      
+      if (validationErrors.length > 0) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: validationErrors
+        })
+      }
+      
+      const result = await kycProfileService.saveProfile(userId, profileData)
+      
+      res.json({
+        success: true,
+        message: result.message,
+        data: result
+      })
+      
+    } catch (error) {
+      console.error('Error saving KYC profile:', error)
+      res.status(500).json({
+        error: 'Failed to save KYC profile',
+        message: process.env.NODE_ENV === 'development' ? error.message : undefined
+      })
+    }
+  }
+  
+  // Submit KYC profile for review
+  async submitProfile(req, res) {
+    try {
+      const userId = req.user.id
+      const kycProfileService = require('../services/kyc-profile.service')
+      
+      const result = await kycProfileService.submitProfile(userId)
+      
+      res.json({
+        success: true,
+        message: result.message
+      })
+      
+    } catch (error) {
+      console.error('Error submitting KYC profile:', error)
+      res.status(500).json({
+        error: 'Failed to submit KYC profile',
+        message: process.env.NODE_ENV === 'development' ? error.message : undefined
+      })
+    }
+  }
+  
+  // Get KYC profile
+  async getProfile(req, res) {
+    try {
+      const userId = req.user.id
+      const kycProfileService = require('../services/kyc-profile.service')
+      
+      const profile = await kycProfileService.getProfileByUserId(userId)
+      
+      if (!profile) {
+        return res.status(404).json({
+          success: false,
+          message: 'KYC profile not found'
+        })
+      }
+      
+      res.json({
+        success: true,
+        data: profile
+      })
+      
+    } catch (error) {
+      console.error('Error getting KYC profile:', error)
+      res.status(500).json({
+        error: 'Failed to get KYC profile',
+        message: process.env.NODE_ENV === 'development' ? error.message : undefined
+      })
+    }
+  }
+  
+  // Get KYC completion status
+  async getCompletionStatus(req, res) {
+    try {
+      const userId = req.user.id
+      const kycProfileService = require('../services/kyc-profile.service')
+      
+      const status = await kycProfileService.getCompletionStatus(userId)
+      
+      res.json({
+        success: true,
+        data: status
+      })
+      
+    } catch (error) {
+      console.error('Error getting KYC completion status:', error)
+      res.status(500).json({
+        error: 'Failed to get completion status',
+        message: process.env.NODE_ENV === 'development' ? error.message : undefined
+      })
+    }
+  }
+  
   // Admin: Get pending KYC documents
   async getPendingKYC(req, res) {
     try {
@@ -182,6 +426,32 @@ class KYCController {
       console.error('Error getting pending KYC:', error)
       res.status(500).json({
         error: 'Failed to get pending KYC documents'
+      })
+    }
+  }
+  
+  // Admin: Get all KYC profiles
+  async getAllProfiles(req, res) {
+    try {
+      const { status, limit = 50, offset = 0 } = req.query
+      const kycProfileService = require('../services/kyc-profile.service')
+      
+      const result = await kycProfileService.getAllProfiles(
+        status,
+        parseInt(limit),
+        parseInt(offset)
+      )
+      
+      res.json({
+        success: true,
+        data: result
+      })
+      
+    } catch (error) {
+      console.error('Error getting all KYC profiles:', error)
+      res.status(500).json({
+        error: 'Failed to get KYC profiles',
+        message: process.env.NODE_ENV === 'development' ? error.message : undefined
       })
     }
   }
@@ -278,6 +548,36 @@ class KYCController {
     }
   }
   
+  // Admin: Update KYC profile status
+  async updateProfileStatus(req, res) {
+    try {
+      const { profileId } = req.params
+      const { status, notes } = req.body
+      const adminUserId = req.user.id
+      
+      const kycProfileService = require('../services/kyc-profile.service')
+      
+      const result = await kycProfileService.updateProfileStatus(
+        profileId,
+        status,
+        adminUserId,
+        notes
+      )
+      
+      res.json({
+        success: true,
+        message: result.message
+      })
+      
+    } catch (error) {
+      console.error('Error updating profile status:', error)
+      res.status(500).json({
+        error: 'Failed to update profile status',
+        message: process.env.NODE_ENV === 'development' ? error.message : undefined
+      })
+    }
+  }
+  
   // Admin: Run auto verification manually
   async runAutoVerification(req, res) {
     try {
@@ -331,10 +631,47 @@ class KYCController {
         ORDER BY date DESC
       `)
       
+      // Get profile statistics
+      const [profileStats] = await db.promise().query(`
+        SELECT 
+          COUNT(*) as total_profiles,
+          SUM(CASE WHEN profile_status = 'DRAFT' THEN 1 ELSE 0 END) as draft_profiles,
+          SUM(CASE WHEN profile_status = 'SUBMITTED' THEN 1 ELSE 0 END) as submitted_profiles,
+          SUM(CASE WHEN profile_status = 'APPROVED' THEN 1 ELSE 0 END) as approved_profiles,
+          SUM(CASE WHEN profile_status = 'REJECTED' THEN 1 ELSE 0 END) as rejected_profiles
+        FROM kyc_profiles
+      `)
+      
+      // Get completion statistics
+      const [completionStats] = await db.promise().query(`
+        SELECT 
+          AVG(
+            CASE 
+              WHEN kp.date_of_birth IS NOT NULL AND kp.nationality IS NOT NULL AND kp.address_line1 IS NOT NULL THEN 30
+              ELSE 0
+            END +
+            CASE 
+              WHEN kp.employment_status IS NOT NULL AND kp.annual_income > 0 AND kp.source_of_funds IS NOT NULL THEN 30
+              ELSE 0
+            END +
+            CASE 
+              WHEN kd.status = 'APPROVED' THEN 40
+              WHEN kd.status = 'AUTO_VERIFIED' THEN 20
+              WHEN kd.status = 'PENDING' THEN 15
+              ELSE 0
+            END
+          ) as avg_completion
+        FROM users u
+        LEFT JOIN kyc_profiles kp ON u.id = kp.user_id
+        LEFT JOIN kyc_documents kd ON u.id = kd.user_id AND kd.status IN ('APPROVED', 'AUTO_VERIFIED', 'PENDING')
+      `)
+      
       res.json({
         success: true,
         data: {
-          summary: stats[0],
+          documentSummary: stats[0],
+          profileSummary: profileStats[0],
+          completionSummary: completionStats[0],
           recentActivity: recent
         }
       })
@@ -359,5 +696,18 @@ module.exports = {
   approveKYC: kycController.approveKYC.bind(kycController),
   rejectKYC: kycController.rejectKYC.bind(kycController),
   runAutoVerification: kycController.runAutoVerification.bind(kycController),
-  getKYCStats: kycController.getKYCStats.bind(kycController)
+  getKYCStats: kycController.getKYCStats.bind(kycController),
+  
+  // Profile methods
+  saveProfile: kycController.saveProfile.bind(kycController),
+  submitProfile: kycController.submitProfile.bind(kycController),
+  getProfile: kycController.getProfile.bind(kycController),
+  getCompletionStatus: kycController.getCompletionStatus.bind(kycController),
+  getAllProfiles: kycController.getAllProfiles.bind(kycController),
+  updateProfileStatus: kycController.updateProfileStatus.bind(kycController),
+  
+  // Auto-fill methods
+  getAutoFillData: kycController.getAutoFillData.bind(kycController),
+  getAutoFillSuggestions: kycController.getAutoFillSuggestions.bind(kycController),
+  saveProfileWithAutoFill: kycController.saveProfileWithAutoFill.bind(kycController)
 }

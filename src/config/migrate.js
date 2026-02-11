@@ -285,24 +285,115 @@ function createKYCTables() {
   `
   
   // Create kyc_documents table
-  db.query(kycTable, (err) => {
-    if (err) {
-      console.error('❌ Error creating kyc_documents table:', err.message)
-    } else {
-      console.log('✅ kyc_documents table ready')
+db.query(kycTable, (err) => {
+  if (err) {
+    console.error('❌ Error creating kyc_documents table:', err.message)
+  } else {
+    console.log('✅ kyc_documents table ready')
+    
+    // Create audit logs table
+    db.query(auditTable, (err) => {
+      if (err) {
+        console.error('❌ Error creating kyc_audit_logs table:', err.message)
+      } else {
+        console.log('✅ kyc_audit_logs table ready')
+        
+        // Create KYC profile tables
+        createKYCProfileTables()
+      }
+    })
+  }
+})
+}
+
+function createKYCProfileTables() {
+  console.log('Creating KYC profile tables...')
+  
+  const kycProfileTable = `
+    CREATE TABLE IF NOT EXISTS kyc_profiles (
+      id VARCHAR(36) PRIMARY KEY,
+      user_id VARCHAR(36) NOT NULL,
       
-      // Create audit logs table
-      db.query(auditTable, (err) => {
-        if (err) {
-          console.error('❌ Error creating kyc_audit_logs table:', err.message)
-        } else {
-          console.log('✅ kyc_audit_logs table ready')
-        }
-      })
+      -- Personal Information
+      date_of_birth DATE,
+      place_of_birth VARCHAR(100),
+      gender ENUM('male', 'female', 'other') DEFAULT 'other',
+      nationality VARCHAR(100),
+      country_of_residence VARCHAR(100),
+      address_line1 VARCHAR(255),
+      address_line2 VARCHAR(255),
+      city VARCHAR(100),
+      state VARCHAR(100),
+      postal_code VARCHAR(20),
+      country VARCHAR(100),
+      phone_number VARCHAR(20),
+      mobile_number VARCHAR(20),
+      
+      -- Employment & Financial Information
+      employment_status ENUM('employed', 'self_employed', 'unemployed', 'retired', 'student') DEFAULT 'employed',
+      occupation VARCHAR(100),
+      employer_name VARCHAR(100),
+      employer_address VARCHAR(255),
+      employer_phone VARCHAR(20),
+      years_in_employment INT DEFAULT 0,
+      monthly_income DECIMAL(15, 2) DEFAULT 0.00,
+      annual_income DECIMAL(15, 2) DEFAULT 0.00,
+      income_currency VARCHAR(10) DEFAULT 'USD',
+      source_of_funds ENUM('salary', 'business', 'investments', 'inheritance', 'savings', 'other') DEFAULT 'salary',
+      other_source_of_funds VARCHAR(255),
+      
+      -- Financial Experience
+      trading_experience_years INT DEFAULT 0,
+      trading_experience_level ENUM('beginner', 'intermediate', 'advanced', 'expert') DEFAULT 'beginner',
+      investment_knowledge ENUM('none', 'basic', 'good', 'excellent') DEFAULT 'basic',
+      risk_tolerance ENUM('low', 'medium', 'high') DEFAULT 'medium',
+      
+      -- Regulatory & Compliance
+      politically_exposed_person BOOLEAN DEFAULT false,
+      pep_details TEXT,
+      us_citizen_or_resident BOOLEAN DEFAULT false,
+      tax_identification_number VARCHAR(50),
+      social_security_number VARCHAR(50),
+      
+      -- Account Purpose
+      account_purpose ENUM('investment', 'savings', 'trading', 'hedging', 'speculation', 'other') DEFAULT 'trading',
+      other_account_purpose VARCHAR(255),
+      estimated_annual_deposit DECIMAL(15, 2) DEFAULT 0.00,
+      estimated_annual_withdrawal DECIMAL(15, 2) DEFAULT 0.00,
+      
+      -- Additional Documents
+      proof_of_address_uploaded BOOLEAN DEFAULT false,
+      proof_of_income_uploaded BOOLEAN DEFAULT false,
+      
+      -- Status & Verification
+      profile_status ENUM('DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED') DEFAULT 'DRAFT',
+      submitted_at TIMESTAMP NULL,
+      reviewed_by VARCHAR(36),
+      reviewed_at TIMESTAMP NULL,
+      review_notes TEXT,
+      
+      -- Timestamps
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      
+      UNIQUE KEY unique_user_profile (user_id),
+      INDEX idx_profile_status (profile_status),
+      INDEX idx_created_at (created_at),
+      
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `
+  
+  // Create kyc_profiles table
+  db.query(kycProfileTable, (err) => {
+    if (err) {
+      console.error('❌ Error creating kyc_profiles table:', err.message)
+    } else {
+      console.log('✅ kyc_profiles table ready')
     }
   })
 }
-
 // Helper function to check and add columns one by one
 function checkAndAddColumns(columns, index) {
   if (index >= columns.length) {
