@@ -4,56 +4,71 @@ const { v4: uuidv4 } = require('uuid')
 
 class KYCProfileService {
   // Create or update KYC profile
-  async saveProfile(userId, profileData) {
-    try {
-      // Remove empty strings and null values
-      const cleanedData = {}
-      for (const [key, value] of Object.entries(profileData)) {
-        if (value !== '' && value !== null && value !== undefined) {
-          cleanedData[key] = value
-        }
+  // REPLACE the entire saveProfile method with this:
+
+async saveProfile(userId, profileData) {
+  try {
+    // Remove empty strings and null values
+    const cleanedData = {}
+    for (const [key, value] of Object.entries(profileData)) {
+      if (value !== '' && value !== null && value !== undefined) {
+        cleanedData[key] = value
       }
+    }
+    
+    // Remove 'first_name' and 'last_name' if they exist - these are in users table, not kyc_profiles
+    delete cleanedData.first_name
+    delete cleanedData.last_name
+    delete cleanedData.email
+    
+    // Check if profile already exists
+    const [existingProfile] = await db.promise().query(
+      `SELECT id FROM kyc_profiles WHERE user_id = ?`,
+      [userId]
+    )
+    
+    if (existingProfile.length > 0) {
+      // UPDATE existing profile - CORRECT SYNTAX
+      const setClause = Object.keys(cleanedData).map(key => `${key} = ?`).join(', ')
+      const values = Object.values(cleanedData)
       
-      // Check if profile already exists
-      const [existingProfile] = await db.promise().query(
-        `SELECT id FROM kyc_profiles WHERE user_id = ?`,
-        [userId]
+      const [result] = await db.promise().query(
+        `UPDATE kyc_profiles SET ${setClause} WHERE user_id = ?`,
+        [...values, userId]
       )
       
-      if (existingProfile.length > 0) {
-        // Update existing profile
-        const [result] = await db.promise().query(
-          `UPDATE kyc_profiles SET ? WHERE user_id = ?`,
-          [cleanedData, userId]
-        )
-        
-        return {
-          success: true,
-          message: 'KYC profile updated successfully',
-          action: 'updated',
-          profileId: existingProfile[0].id
-        }
-      } else {
-        // Create new profile
-        const profileId = uuidv4()
-        
-        const [result] = await db.promise().query(
-          `INSERT INTO kyc_profiles (id, user_id, ?) VALUES (?, ?, ?)`,
-          [cleanedData, profileId, userId, cleanedData]
-        )
-        
-        return {
-          success: true,
-          message: 'KYC profile created successfully',
-          action: 'created',
-          profileId: profileId
-        }
+      return {
+        success: true,
+        message: 'KYC profile updated successfully',
+        action: 'updated',
+        profileId: existingProfile[0].id
       }
-    } catch (error) {
-      console.error('Error saving KYC profile:', error)
-      throw new Error('Failed to save KYC profile: ' + error.message)
+    } else {
+      // CREATE new profile - CORRECT SYNTAX
+      const profileId = uuidv4()
+      
+      // Prepare columns and values for INSERT
+      const columns = ['id', 'user_id', ...Object.keys(cleanedData)]
+      const placeholders = columns.map(() => '?').join(', ')
+      const values = [profileId, userId, ...Object.values(cleanedData)]
+      
+      const [result] = await db.promise().query(
+        `INSERT INTO kyc_profiles (${columns.join(', ')}) VALUES (${placeholders})`,
+        values
+      )
+      
+      return {
+        success: true,
+        message: 'KYC profile created successfully',
+        action: 'created',
+        profileId: profileId
+      }
     }
+  } catch (error) {
+    console.error('Error saving KYC profile:', error)
+    throw new Error('Failed to save KYC profile: ' + error.message)
   }
+}
   
   // Submit KYC profile for review
   async submitProfile(userId) {
@@ -372,12 +387,12 @@ class KYCProfileService {
     if (data.date_of_birth) {
       const dob = new Date(data.date_of_birth)
       const today = new Date()
-      const age = today.getFullYear() - dob.getFullYear()
-      const monthDiff = today.getMonth() - dob.getMonth()
-      
-      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-        age--
-      }
+      let age = today.getFullYear() - dob.getFullYear()
+    const monthDiff = today.getMonth() - dob.getMonth()
+
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+    age = age - 1  // ✅ Using let variable
+    }
       
       if (age < 18) {
         errors.push('You must be at least 18 years old')

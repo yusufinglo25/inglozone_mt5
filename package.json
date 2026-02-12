@@ -27,7 +27,7 @@
     "express-validator": "^7.3.1",
     "face-api.js": "^0.22.2",
     "fs-extra": "^11.3.3",
-    "jimp": "^1.6.0",
+    "jimp": "^0.16.1",
     "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.3",
     "moment": "^2.30.1",

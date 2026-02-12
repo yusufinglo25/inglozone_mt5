@@ -291,10 +291,10 @@ class KYCService {
       // Log audit
       await this.logAudit({
         kycDocumentId: kycId,
-        userId: document.user_id,
+        userId: document.user_id || 'system', 
         action: 'AUTO_VERIFY',
         details: { score, extracted_data: extractedData }
-      })
+        });
       
       return {
         success: true,
@@ -309,7 +309,7 @@ class KYCService {
       // Log failed verification
       await this.logAudit({
         kycDocumentId: kycId,
-        userId: 'system',
+        userId: null,
         action: 'AUTO_VERIFY',
         details: { error: error.message }
       })
@@ -701,7 +701,7 @@ class KYCService {
     } = data
     
     const auditId = uuidv4()
-    
+    const safeUserId = (userId === 'system' || !userId) ? null : userId
     await db.promise().query(
       `INSERT INTO kyc_audit_logs 
        (id, kyc_document_id, user_id, action, details, ip_address, user_agent)
