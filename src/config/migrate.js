@@ -401,6 +401,331 @@ function createKYCProfileTables() {
   })
 }
 
+// Add this function after createKYCProfileTables()
+
+function addMissingKYCDocumentColumns() {
+  console.log('Checking for missing columns in kyc_documents table...')
+  
+  const addColumns = [
+    { name: 'document_side', type: "ENUM('front', 'back', 'single') DEFAULT 'single'" }
+  ]
+  
+  checkAndAddKYCDocumentColumns(addColumns, 0)
+}
+
+function checkAndAddKYCDocumentColumns(columns, index) {
+  if (index >= columns.length) {
+    console.log('✅ All kyc_documents table columns verified')
+    
+    // Update existing records
+    db.query(
+      `UPDATE kyc_documents SET document_side = 'single' WHERE document_side IS NULL`,
+      (err) => {
+        if (err) console.error('Error updating document_side:', err.message)
+        else console.log('✅ Existing documents updated with default side')
+      }
+    )
+    
+    return
+  }
+  
+  const column = columns[index]
+  
+  db.query(
+    `SELECT COUNT(*) as exists_flag 
+     FROM information_schema.COLUMNS 
+     WHERE TABLE_SCHEMA = DATABASE() 
+     AND TABLE_NAME = 'kyc_documents' 
+     AND COLUMN_NAME = ?`,
+    [column.name],
+    (err, results) => {
+      if (err) {
+        console.error(`Error checking column ${column.name}:`, err.message)
+        checkAndAddKYCDocumentColumns(columns, index + 1)
+        return
+      }
+      
+      const columnExists = results[0].exists_flag > 0
+      
+      if (!columnExists) {
+        db.query(
+          `ALTER TABLE kyc_documents ADD COLUMN ${column.name} ${column.type}`,
+          (alterErr) => {
+            if (alterErr) {
+              console.error(`Error adding column ${column.name}:`, alterErr.message)
+            } else {
+              console.log(`✅ Column ${column.name} added to kyc_documents`)
+            }
+            checkAndAddKYCDocumentColumns(columns, index + 1)
+          }
+        )
+      } else {
+        console.log(`✅ Column ${column.name} already exists in kyc_documents`)
+        checkAndAddKYCDocumentColumns(columns, index + 1)
+      }
+    }
+  )
+}
+
+function addMissingKYCProfileColumns() {
+  console.log('Checking for missing columns in kyc_profiles table...')
+  
+  const addColumns = [
+    { name: 'primary_phone_country_code', type: "VARCHAR(5) DEFAULT '+1'" },
+    { name: 'primary_phone_number', type: 'VARCHAR(20)' },
+    { name: 'secondary_phone_country_code', type: 'VARCHAR(5)' },
+    { name: 'secondary_phone_number', type: 'VARCHAR(20)' }
+  ]
+  
+  checkAndAddKYCProfileColumns(addColumns, 0)
+}
+
+function checkAndAddKYCProfileColumns(columns, index) {
+  if (index >= columns.length) {
+    console.log('✅ All kyc_profiles table columns verified')
+    return
+  }
+  
+  const column = columns[index]
+  
+  db.query(
+    `SELECT COUNT(*) as exists_flag 
+     FROM information_schema.COLUMNS 
+     WHERE TABLE_SCHEMA = DATABASE() 
+     AND TABLE_NAME = 'kyc_profiles' 
+     AND COLUMN_NAME = ?`,
+    [column.name],
+    (err, results) => {
+      if (err) {
+        console.error(`Error checking column ${column.name}:`, err.message)
+        checkAndAddKYCProfileColumns(columns, index + 1)
+        return
+      }
+      
+      const columnExists = results[0].exists_flag > 0
+      
+      if (!columnExists) {
+        db.query(
+          `ALTER TABLE kyc_profiles ADD COLUMN ${column.name} ${column.type}`,
+          (alterErr) => {
+            if (alterErr) {
+              console.error(`Error adding column ${column.name}:`, alterErr.message)
+            } else {
+              console.log(`✅ Column ${column.name} added to kyc_profiles`)
+            }
+            checkAndAddKYCProfileColumns(columns, index + 1)
+          }
+        )
+      } else {
+        console.log(`✅ Column ${column.name} already exists in kyc_profiles`)
+        checkAndAddKYCProfileColumns(columns, index + 1)
+      }
+    }
+  )
+}
+
+// Update the ENUM for document_type
+function updateDocumentTypeEnum() {
+  db.query(
+    `SHOW COLUMNS FROM kyc_documents LIKE 'document_type'`,
+    (err, results) => {
+      if (err) {
+        console.error('Error checking document_type:', err.message)
+        return
+      }
+      
+      if (results.length > 0 && !results[0].Type.includes('national_id_front')) {
+        console.log('Updating document_type ENUM...')
+        db.query(
+          `ALTER TABLE kyc_documents 
+           MODIFY COLUMN document_type ENUM('passport', 'national_id', 'national_id_front', 'national_id_back', 'drivers_license', 'residence_permit') NOT NULL`,
+          (alterErr) => {
+            if (alterErr) {
+              console.error('Error updating document_type:', alterErr.message)
+            } else {
+              console.log('✅ document_type ENUM updated')
+            }
+          }
+        )
+      }
+    }
+  )
+}
+
+// Update the createKYCTables function to also check for missing columns
+function createKYCTables() {
+  console.log('Creating/updating KYC tables...')
+  
+  const kycTable = `
+    CREATE TABLE IF NOT EXISTS kyc_documents (
+      id VARCHAR(36) PRIMARY KEY,
+      user_id VARCHAR(36) NOT NULL,
+      document_type ENUM('passport', 'national_id', 'national_id_front', 'national_id_back', 'drivers_license', 'residence_permit') NOT NULL,
+      document_side ENUM('front', 'back', 'single') DEFAULT 'single',
+      original_filename VARCHAR(255) NOT NULL,
+      encrypted_file_path VARCHAR(500) NOT NULL,
+      iv VARCHAR(64) NOT NULL,
+      auth_tag VARCHAR(64) NOT NULL,
+      status ENUM('PENDING', 'AUTO_VERIFIED', 'APPROVED', 'REJECTED') DEFAULT 'PENDING',
+      extracted_data JSON,
+      auto_score INT DEFAULT 0,
+      admin_comment TEXT,
+      reviewed_by VARCHAR(36),
+      reviewed_at TIMESTAMP NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_user_id (user_id),
+      INDEX idx_status (status),
+      INDEX idx_document_side (document_side),
+      INDEX idx_created_at (created_at),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `
+  
+  const auditTable = `
+    CREATE TABLE IF NOT EXISTS kyc_audit_logs (
+      id VARCHAR(36) PRIMARY KEY,
+      kyc_document_id VARCHAR(36) NOT NULL,
+      user_id VARCHAR(36) NOT NULL,
+      action ENUM('UPLOAD', 'AUTO_VERIFY', 'MANUAL_APPROVE', 'MANUAL_REJECT', 'DELETE') NOT NULL,
+      details JSON,
+      ip_address VARCHAR(45),
+      user_agent TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_kyc_document_id (kyc_document_id),
+      INDEX idx_user_id (user_id),
+      INDEX idx_action (action),
+      FOREIGN KEY (kyc_document_id) REFERENCES kyc_documents(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `
+  
+  // Create kyc_documents table
+  db.query(kycTable, (err) => {
+    if (err) {
+      console.error('❌ Error creating kyc_documents table:', err.message)
+    } else {
+      console.log('✅ kyc_documents table ready')
+      
+      // Add missing columns to existing table
+      addMissingKYCDocumentColumns()
+      
+      // Update ENUM
+      updateDocumentTypeEnum()
+      
+      // Create audit logs table
+      db.query(auditTable, (err) => {
+        if (err) {
+          console.error('❌ Error creating kyc_audit_logs table:', err.message)
+        } else {
+          console.log('✅ kyc_audit_logs table ready')
+          
+          // Create KYC profile tables
+          createKYCProfileTables()
+        }
+      })
+    }
+  })
+}
+
+// Update createKYCProfileTables to also check for missing columns
+function createKYCProfileTables() {
+  console.log('Creating/updating KYC profile tables...')
+  
+  const kycProfileTable = `
+    CREATE TABLE IF NOT EXISTS kyc_profiles (
+      id VARCHAR(36) PRIMARY KEY,
+      user_id VARCHAR(36) NOT NULL,
+      
+      -- Personal Information
+      date_of_birth DATE,
+      place_of_birth VARCHAR(100),
+      gender ENUM('male', 'female', 'other') DEFAULT 'other',
+      nationality VARCHAR(100),
+      country_of_residence VARCHAR(100),
+      address_line1 VARCHAR(255),
+      address_line2 VARCHAR(255),
+      city VARCHAR(100),
+      state VARCHAR(100),
+      postal_code VARCHAR(20),
+      country VARCHAR(100),
+      
+      -- Phone Numbers with Country Codes
+      primary_phone_country_code VARCHAR(5) DEFAULT '+1',
+      primary_phone_number VARCHAR(20),
+      secondary_phone_country_code VARCHAR(5),
+      secondary_phone_number VARCHAR(20),
+      
+      -- Employment & Financial Information
+      employment_status ENUM('employed', 'self_employed', 'unemployed', 'retired', 'student') DEFAULT 'employed',
+      occupation VARCHAR(100),
+      employer_name VARCHAR(100),
+      employer_address VARCHAR(255),
+      employer_phone VARCHAR(20),
+      years_in_employment INT DEFAULT 0,
+      monthly_income DECIMAL(15, 2) DEFAULT 0.00,
+      annual_income DECIMAL(15, 2) DEFAULT 0.00,
+      income_currency VARCHAR(10) DEFAULT 'USD',
+      source_of_funds ENUM('salary', 'business', 'investments', 'inheritance', 'savings', 'other') DEFAULT 'salary',
+      other_source_of_funds VARCHAR(255),
+      
+      -- Financial Experience
+      trading_experience_years INT DEFAULT 0,
+      trading_experience_level ENUM('beginner', 'intermediate', 'advanced', 'expert') DEFAULT 'beginner',
+      investment_knowledge ENUM('none', 'basic', 'good', 'excellent') DEFAULT 'basic',
+      risk_tolerance ENUM('low', 'medium', 'high') DEFAULT 'medium',
+      
+      -- Regulatory & Compliance
+      politically_exposed_person BOOLEAN DEFAULT false,
+      pep_details TEXT,
+      us_citizen_or_resident BOOLEAN DEFAULT false,
+      tax_identification_number VARCHAR(50),
+      social_security_number VARCHAR(50),
+      
+      -- Account Purpose
+      account_purpose ENUM('investment', 'savings', 'trading', 'hedging', 'speculation', 'other') DEFAULT 'trading',
+      other_account_purpose VARCHAR(255),
+      estimated_annual_deposit DECIMAL(15, 2) DEFAULT 0.00,
+      estimated_annual_withdrawal DECIMAL(15, 2) DEFAULT 0.00,
+      
+      -- Additional Documents
+      proof_of_address_uploaded BOOLEAN DEFAULT false,
+      proof_of_income_uploaded BOOLEAN DEFAULT false,
+      
+      -- Status & Verification
+      profile_status ENUM('DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED') DEFAULT 'DRAFT',
+      submitted_at TIMESTAMP NULL,
+      reviewed_by VARCHAR(36),
+      reviewed_at TIMESTAMP NULL,
+      review_notes TEXT,
+      
+      -- Timestamps
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      
+      UNIQUE KEY unique_user_profile (user_id),
+      INDEX idx_profile_status (profile_status),
+      INDEX idx_created_at (created_at),
+      
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `
+  
+  // Create kyc_profiles table
+  db.query(kycProfileTable, (err) => {
+    if (err) {
+      console.error('❌ Error creating kyc_profiles table:', err.message)
+    } else {
+      console.log('✅ kyc_profiles table ready')
+      
+      // Add missing columns to existing kyc_profiles table
+      addMissingKYCProfileColumns()
+    }
+  })
+}
+
 // Helper function to check and add columns one by one
 function checkAndAddColumns(columns, index) {
   if (index >= columns.length) {
