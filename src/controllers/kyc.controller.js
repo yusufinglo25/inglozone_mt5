@@ -82,6 +82,131 @@ class KYCController {
     }
   }
   
+  // Add these methods to the KYCController class in kyc.controller.js
+
+// NEW: Upload back side of national ID
+async uploadBackDocument(req, res) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        error: 'No file uploaded'
+      })
+    }
+    
+    const userId = req.user.id
+    
+    // Encrypt file
+    const encryptedData = kycService.encryptFile(req.file.buffer)
+    
+    // Generate filename with side indicator
+    const filename = kycService.generateFileName(userId, req.file.originalname, 'back')
+    
+    // Save encrypted file
+    const filePath = await kycService.saveEncryptedFile(encryptedData, filename)
+    
+    // Create KYC record with back side
+    const kycDocument = await kycService.createKYCDocument({
+      userId,
+      documentType: 'national_id_back',
+      documentSide: 'back',
+      originalFilename: req.file.originalname,
+      encryptedFilePath: filePath,
+      iv: encryptedData.iv,
+      authTag: encryptedData.authTag
+    })
+    
+    // Log upload
+    await kycService.logAudit({
+      kycDocumentId: kycDocument.id,
+      userId,
+      action: 'UPLOAD',
+      details: {
+        document_type: 'national_id_back',
+        document_side: 'back',
+        file_size: req.file.size,
+        mime_type: req.file.mimetype
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    })
+    
+    // Queue for auto verification
+    setTimeout(async () => {
+      try {
+        await kycService.autoVerifyKYCDocument(kycDocument.id)
+      } catch (error) {
+        console.error('Auto verification failed:', error)
+      }
+    }, 1000)
+    
+    // Check if front exists
+    const completeness = await kycService.checkDocumentCompleteness(userId)
+    
+    res.status(201).json({
+      success: true,
+      message: 'Back side of ID uploaded successfully',
+      data: {
+        id: kycDocument.id,
+        documentType: 'national_id_back',
+        status: 'PENDING',
+        createdAt: new Date(),
+        completeness
+      }
+    })
+    
+  } catch (error) {
+    console.error('Error uploading back document:', error)
+    res.status(500).json({
+      error: 'Failed to upload back document',
+      message: process.env.NODE_ENV === 'development' ? error.message : undefined
+    })
+  }
+}
+
+// NEW: Check document completeness
+async getDocumentCompleteness(req, res) {
+  try {
+    const userId = req.user.id
+    
+    const completeness = await kycService.checkDocumentCompleteness(userId)
+    
+    res.json({
+      success: true,
+      data: completeness
+    })
+    
+  } catch (error) {
+    console.error('Error checking document completeness:', error)
+    res.status(500).json({
+      error: 'Failed to check document completeness'
+    })
+  }
+}
+
+// NEW: Get country phone codes list
+async getCountryCodes(req, res) {
+  try {
+    const { countryCodes } = require('../data/country-codes')
+    
+    // Format for frontend
+    const formattedCodes = countryCodes.map(c => ({
+      country: c.country,
+      code: c.code,
+      example: `e.g., ${c.code} ${c.example || '1234567890'}`
+    }))
+    
+    res.json({
+      success: true,
+      data: formattedCodes
+    })
+    
+  } catch (error) {
+    console.error('Error getting country codes:', error)
+    res.status(500).json({
+      error: 'Failed to get country codes'
+    })
+  }
+}
   // Get user's KYC status
   async getKYCStatus(req, res) {
     try {
@@ -686,9 +811,11 @@ class KYCController {
 }
 
 // Create instance and export all methods
+// Create instance and export all methods
 const kycController = new KYCController()
 
 module.exports = {
+  // Existing methods
   uploadDocument: kycController.uploadDocument.bind(kycController),
   getKYCStatus: kycController.getKYCStatus.bind(kycController),
   getKYCDocument: kycController.getKYCDocument.bind(kycController),
@@ -709,5 +836,10 @@ module.exports = {
   // Auto-fill methods
   getAutoFillData: kycController.getAutoFillData.bind(kycController),
   getAutoFillSuggestions: kycController.getAutoFillSuggestions.bind(kycController),
-  saveProfileWithAutoFill: kycController.saveProfileWithAutoFill.bind(kycController)
+  saveProfileWithAutoFill: kycController.saveProfileWithAutoFill.bind(kycController),
+  
+  // NEW METHODS - Add these
+  uploadBackDocument: kycController.uploadBackDocument.bind(kycController),
+  getDocumentCompleteness: kycController.getDocumentCompleteness.bind(kycController),
+  getCountryCodes: kycController.getCountryCodes.bind(kycController)
 }

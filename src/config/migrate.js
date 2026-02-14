@@ -241,30 +241,32 @@ function addForeignKeys() {
 function createKYCTables() {
   console.log('Creating KYC tables...')
   
-  const kycTable = `
-    CREATE TABLE IF NOT EXISTS kyc_documents (
-      id VARCHAR(36) PRIMARY KEY,
-      user_id VARCHAR(36) NOT NULL,
-      document_type ENUM('passport', 'national_id') NOT NULL,
-      original_filename VARCHAR(255) NOT NULL,
-      encrypted_file_path VARCHAR(500) NOT NULL,
-      iv VARCHAR(64) NOT NULL,
-      auth_tag VARCHAR(64) NOT NULL,
-      status ENUM('PENDING', 'AUTO_VERIFIED', 'APPROVED', 'REJECTED') DEFAULT 'PENDING',
-      extracted_data JSON,
-      auto_score INT DEFAULT 0,
-      admin_comment TEXT,
-      reviewed_by VARCHAR(36),
-      reviewed_at TIMESTAMP NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      INDEX idx_user_id (user_id),
-      INDEX idx_status (status),
-      INDEX idx_created_at (created_at),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-  `
+const kycTable = `
+  CREATE TABLE IF NOT EXISTS kyc_documents (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    document_type ENUM('passport', 'national_id', 'national_id_front', 'national_id_back', 'drivers_license', 'residence_permit') NOT NULL,
+    document_side ENUM('front', 'back', 'single') DEFAULT 'single',
+    original_filename VARCHAR(255) NOT NULL,
+    encrypted_file_path VARCHAR(500) NOT NULL,
+    iv VARCHAR(64) NOT NULL,
+    auth_tag VARCHAR(64) NOT NULL,
+    status ENUM('PENDING', 'AUTO_VERIFIED', 'APPROVED', 'REJECTED') DEFAULT 'PENDING',
+    extracted_data JSON,
+    auto_score INT DEFAULT 0,
+    admin_comment TEXT,
+    reviewed_by VARCHAR(36),
+    reviewed_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_user_id (user_id),
+    INDEX idx_status (status),
+    INDEX idx_document_side (document_side),
+    INDEX idx_created_at (created_at),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+`
   
   const auditTable = `
     CREATE TABLE IF NOT EXISTS kyc_audit_logs (
@@ -326,8 +328,12 @@ function createKYCProfileTables() {
       state VARCHAR(100),
       postal_code VARCHAR(20),
       country VARCHAR(100),
-      phone_number VARCHAR(20),
-      mobile_number VARCHAR(20),
+      
+      -- Phone Numbers with Country Codes (NEW)
+      primary_phone_country_code VARCHAR(5) DEFAULT '+1',
+      primary_phone_number VARCHAR(20),
+      secondary_phone_country_code VARCHAR(5),
+      secondary_phone_number VARCHAR(20),
       
       -- Employment & Financial Information
       employment_status ENUM('employed', 'self_employed', 'unemployed', 'retired', 'student') DEFAULT 'employed',
@@ -361,7 +367,7 @@ function createKYCProfileTables() {
       estimated_annual_deposit DECIMAL(15, 2) DEFAULT 0.00,
       estimated_annual_withdrawal DECIMAL(15, 2) DEFAULT 0.00,
       
-      -- Additional Documents
+      -- Additional Documents (UPDATED)
       proof_of_address_uploaded BOOLEAN DEFAULT false,
       proof_of_income_uploaded BOOLEAN DEFAULT false,
       
@@ -390,10 +396,11 @@ function createKYCProfileTables() {
     if (err) {
       console.error('❌ Error creating kyc_profiles table:', err.message)
     } else {
-      console.log('✅ kyc_profiles table ready')
+      console.log('✅ kyc_profiles table ready with phone country codes')
     }
   })
 }
+
 // Helper function to check and add columns one by one
 function checkAndAddColumns(columns, index) {
   if (index >= columns.length) {

@@ -21,11 +21,11 @@ class KYCService {
     }
   }
   
-  // Generate a unique filename with UUID
-  generateFileName(userId, originalFilename) {
+  // Generate a unique filename with UUID and side info
+  generateFileName(userId, originalFilename, documentSide = 'single') {
     const ext = path.extname(originalFilename)
     const timestamp = Date.now()
-    return `${userId}_${timestamp}_${uuidv4()}${ext}`
+    return `${userId}_${documentSide}_${timestamp}_${uuidv4()}${ext}`
   }
   
   // Encrypt file using AES-256-GCM
@@ -71,11 +71,12 @@ class KYCService {
     return filePath
   }
   
-  // Create KYC document record
+  // ENHANCED: Create KYC document record with document side
   async createKYCDocument(data) {
     const {
       userId,
       documentType,
+      documentSide = 'single',
       originalFilename,
       encryptedFilePath,
       iv,
@@ -86,9 +87,9 @@ class KYCService {
     
     const [result] = await db.promise().query(
       `INSERT INTO kyc_documents 
-       (id, user_id, document_type, original_filename, encrypted_file_path, iv, auth_tag, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
-      [kycId, userId, documentType, originalFilename, encryptedFilePath, iv, authTag]
+       (id, user_id, document_type, document_side, original_filename, encrypted_file_path, iv, auth_tag, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+      [kycId, userId, documentType, documentSide, originalFilename, encryptedFilePath, iv, authTag]
     )
     
     return {
@@ -97,7 +98,37 @@ class KYCService {
     }
   }
   
-  // Get KYC document by ID
+  // NEW: Check if user has complete document set
+  async checkDocumentCompleteness(userId) {
+    const [documents] = await db.promise().query(
+      `SELECT document_type, document_side, status 
+       FROM kyc_documents 
+       WHERE user_id = ? AND status IN ('APPROVED', 'AUTO_VERIFIED', 'PENDING')`,
+      [userId]
+    )
+    
+    const result = {
+      passport: { uploaded: false, status: null },
+      national_id: { front: false, back: false, status: null }
+    }
+    
+    documents.forEach(doc => {
+      if (doc.document_type === 'passport') {
+        result.passport.uploaded = true
+        result.passport.status = doc.status
+      } else if (doc.document_type === 'national_id_front') {
+        result.national_id.front = true
+        result.national_id.status = doc.status
+      } else if (doc.document_type === 'national_id_back') {
+        result.national_id.back = true
+        result.national_id.status = doc.status
+      }
+    })
+    
+    return result
+  }
+  
+  // ENHANCED: Get KYC document by ID
   async getKYCDocumentById(kycId, includeFile = false) {
     const [documents] = await db.promise().query(
       `SELECT kd.*, 
@@ -132,16 +163,34 @@ class KYCService {
     return document
   }
   
-  // Get all KYC documents for user
+  // ENHANCED: Get all KYC documents for user with grouping
   async getUserKYCDocuments(userId) {
     const [documents] = await db.promise().query(
-      `SELECT id, document_type, status, auto_score, 
-              created_at, updated_at, reviewed_at
+      `SELECT id, document_type, document_side, status, auto_score, 
+              created_at, updated_at, reviewed_at, extracted_data
        FROM kyc_documents 
        WHERE user_id = ?
-       ORDER BY created_at DESC`,
+       ORDER BY 
+         CASE document_type
+           WHEN 'passport' THEN 1
+           WHEN 'national_id_front' THEN 2
+           WHEN 'national_id_back' THEN 3
+           ELSE 4
+         END,
+         created_at DESC`,
       [userId]
     )
+    
+    // Parse extracted data for each document
+    documents.forEach(doc => {
+      if (doc.extracted_data) {
+        try {
+          doc.extracted_data = JSON.parse(doc.extracted_data)
+        } catch (e) {
+          doc.extracted_data = null
+        }
+      }
+    })
     
     return documents
   }
@@ -149,7 +198,7 @@ class KYCService {
   // Get pending KYC documents for admin
   async getPendingKYCDocuments(limit = 50, offset = 0) {
     const [documents] = await db.promise().query(
-      `SELECT kd.id, kd.document_type, kd.status, kd.auto_score,
+      `SELECT kd.id, kd.document_type, kd.document_side, kd.status, kd.auto_score,
               kd.created_at, kd.updated_at,
               u.id as user_id, u.email, u.first_name, u.last_name
        FROM kyc_documents kd
@@ -198,7 +247,7 @@ class KYCService {
     return result.affectedRows > 0
   }
   
-  // Automatic verification using OCR and image analysis
+  // ENHANCED: Automatic verification with side-specific logic
   async autoVerifyKYCDocument(kycId) {
     try {
       const document = await this.getKYCDocumentById(kycId, true)
@@ -208,24 +257,24 @@ class KYCService {
       }
       
       let score = 0
-      const extractedData = {}
+      const extractedData = {
+        document_side: document.document_side,
+        document_type: document.document_type
+      }
       
       // Check if file is PDF or image
       const isPdf = document.original_filename.toLowerCase().endsWith('.pdf')
       
       if (isPdf) {
-        // PDF processing would go here
-        score += 30 // Base score for PDF
+        score += 30
         extractedData.file_type = 'pdf'
       } else {
         // Image processing
         const image = await Jimp.read(document.fileBuffer)
         
-        // Image quality checks
         const width = image.bitmap.width
         const height = image.bitmap.height
         
-        // Score based on image size
         if (width >= 800 && height >= 600) {
           score += 20
         } else if (width >= 400 && height >= 300) {
@@ -248,29 +297,36 @@ class KYCService {
         
         extractedData.ocr_text = text.substring(0, 5000)
         
-        // Advanced document validation with auto-fill
-        const validationResult = this.validateAndExtractDocumentData(text, document.document_type)
+        // Extract based on document type and side
+        const validationResult = this.validateAndExtractDocumentData(
+          text, 
+          document.document_type,
+          document.document_side
+        )
         score += validationResult.score
         
         Object.assign(extractedData, validationResult.extracted)
-        
-        // Try to extract additional personal information
-        const personalInfo = this.extractPersonalInformation(text, document.document_type)
-        if (personalInfo) {
-          extractedData.personal_info = personalInfo
-        }
         
       } catch (ocrError) {
         console.error('OCR processing failed:', ocrError)
         extractedData.ocr_error = 'Failed to process text'
       }
       
-      // Face detection (simplified)
-      if (!isPdf) {
+      // Face detection (for front of ID or passport)
+      if (!isPdf && (document.document_side === 'front' || document.document_type === 'passport')) {
         const hasFace = await this.detectFace(document.fileBuffer)
         if (hasFace) {
           score += 25
           extractedData.has_face = true
+        }
+      }
+      
+      // For back of ID, check for barcode/mrz patterns
+      if (document.document_side === 'back') {
+        const hasBarcode = await this.detectBarcode(document.fileBuffer)
+        if (hasBarcode) {
+          score += 15
+          extractedData.has_barcode = true
         }
       }
       
@@ -283,18 +339,19 @@ class KYCService {
         [JSON.stringify(extractedData), score, score, kycId]
       )
       
-      // If we extracted personal info, try to auto-fill KYC profile
-      if (extractedData.personal_info) {
+      // If we extracted personal info from front/passport, try to auto-fill KYC profile
+      if ((document.document_side === 'front' || document.document_type === 'passport') && 
+          extractedData.personal_info) {
         await this.autoFillKYCProfile(document.user_id, extractedData.personal_info, kycId)
       }
       
       // Log audit
       await this.logAudit({
         kycDocumentId: kycId,
-        userId: document.user_id || 'system', 
+        userId: document.user_id,
         action: 'AUTO_VERIFY',
         details: { score, extracted_data: extractedData }
-        });
+      })
       
       return {
         success: true,
@@ -324,11 +381,17 @@ class KYCService {
   // Simple face detection (placeholder)
   async detectFace(imageBuffer) {
     // In production, use a proper face detection library
-    return Math.random() > 0.3 // 70% chance of "detecting" a face
+    return Math.random() > 0.3
   }
   
-  // Validate and extract document data with auto-fill
-  validateAndExtractDocumentData(text, documentType) {
+  // Simple barcode detection (placeholder)
+  async detectBarcode(imageBuffer) {
+    // In production, use a proper barcode detection library
+    return Math.random() > 0.4
+  }
+  
+  // ENHANCED: Validate and extract document data with side awareness
+  validateAndExtractDocumentData(text, documentType, documentSide = 'single') {
     const result = {
       score: 0,
       extracted: {}
@@ -336,7 +399,7 @@ class KYCService {
     
     const lowerText = text.toLowerCase()
     
-    // Check for document type specific keywords
+    // Document type specific validation
     if (documentType === 'passport') {
       if (lowerText.includes('passport') || lowerText.includes('passeport')) {
         result.score += 15
@@ -349,9 +412,18 @@ class KYCService {
         result.score += 20
         result.extracted.document_number = passportNumber[0]
       }
+      
+      // Look for MRZ (Machine Readable Zone) - bottom of passport
+      const mrzPattern = /[A-Z0-9<]{44}/g
+      const mrz = text.match(mrzPattern)
+      if (mrz && mrz.length >= 2) {
+        result.score += 25
+        result.extracted.has_mrz = true
+        result.extracted.mrz = mrz
+      }
     }
     
-    if (documentType === 'national_id') {
+    if (documentType === 'national_id_front' || documentType === 'national_id_front') {
       if (lowerText.includes('national') || lowerText.includes('identity') || lowerText.includes('id')) {
         result.score += 15
         result.extracted.has_id_keyword = true
@@ -365,70 +437,62 @@ class KYCService {
       }
     }
     
-    // Look for dates (DOB, expiry, issue)
+    if (documentType === 'national_id_back') {
+      // Back side might have address, barcode, etc.
+      if (lowerText.includes('address') || lowerText.includes('residence')) {
+        result.score += 10
+        result.extracted.has_address_keyword = true
+      }
+      
+      // Look for barcode numbers
+      const barcodePattern = /[0-9]{10,20}/
+      const barcode = text.match(barcodePattern)
+      if (barcode) {
+        result.score += 15
+        result.extracted.barcode = barcode[0]
+      }
+    }
+    
+    // Common fields extraction (apply to any document side)
+    
+    // Look for dates
     const datePattern = /\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}\b/
     const dates = text.match(datePattern)
     if (dates && dates.length > 0) {
       result.score += 10
       result.extracted.dates_found = dates
       
-      // Try to identify DOB (usually first date or contains "birth", "dob")
+      // Try to identify DOB
       if (text.toLowerCase().includes('birth') || text.toLowerCase().includes('dob')) {
         const birthMatch = text.match(/(?:birth|dob)[:\s]*([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/i)
         if (birthMatch) {
-          result.extracted.date_of_birth = birthMatch[1]
-        } else if (dates.length >= 1) {
-          result.extracted.date_of_birth = dates[0]
-        }
-      }
-      
-      // Try to identify expiry date
-      if (text.toLowerCase().includes('expiry') || text.toLowerCase().includes('expire') || text.toLowerCase().includes('valid until')) {
-        const expiryMatch = text.match(/(?:expiry|expire|valid until)[:\s]*([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/i)
-        if (expiryMatch) {
-          result.extracted.expiry_date = expiryMatch[1]
-        } else if (dates.length >= 2) {
-          result.extracted.expiry_date = dates[1]
+          result.extracted.date_of_birth = this.formatDate(birthMatch[1])
         }
       }
     }
     
-    // Look for names
-    const namePattern = /\b[A-Z][a-z]+ [A-Z][a-z]+\b/
-    const names = text.match(namePattern)
-    if (names && names.length > 0) {
-      result.score += 15
-      result.extracted.names_found = names
-      
-      // Try to extract first and last name
-      const fullName = names[0]
-      const nameParts = fullName.split(' ')
-      if (nameParts.length >= 2) {
-        result.extracted.first_name = nameParts[0]
-        result.extracted.last_name = nameParts.slice(1).join(' ')
+    // Look for names (more relevant on front/passport)
+    if (documentSide === 'front' || documentType === 'passport') {
+      const namePattern = /\b[A-Z][a-z]+ [A-Z][a-z]+\b/
+      const names = text.match(namePattern)
+      if (names && names.length > 0) {
+        result.score += 15
+        result.extracted.names_found = names
+        
+        const fullName = names[0]
+        const nameParts = fullName.split(' ')
+        if (nameParts.length >= 2) {
+          result.extracted.first_name = nameParts[0]
+          result.extracted.last_name = nameParts.slice(1).join(' ')
+        }
       }
     }
     
-    // Look for nationality/country
+    // Look for nationality
     const countryPattern = /\b(?:Nationality|Country)[:\s]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i
     const countryMatch = text.match(countryPattern)
     if (countryMatch) {
       result.extracted.nationality = countryMatch[1]
-    }
-    
-    // Look for place of birth
-    const birthPlacePattern = /\b(?:Place of Birth|Born in|Birthplace)[:\s]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i
-    const birthPlaceMatch = text.match(birthPlacePattern)
-    if (birthPlaceMatch) {
-      result.extracted.place_of_birth = birthPlaceMatch[1]
-    }
-    
-    // Look for gender
-    const genderPattern = /\b(?:Sex|Gender)[:\s]*(Male|Female|M|F)/i
-    const genderMatch = text.match(genderPattern)
-    if (genderMatch) {
-      const gender = genderMatch[1].toLowerCase()
-      result.extracted.gender = gender === 'm' ? 'male' : gender === 'f' ? 'female' : gender
     }
     
     return result
@@ -455,13 +519,6 @@ class KYCService {
     const dobMatch = text.match(dobPattern)
     if (dobMatch) {
       info.date_of_birth = this.formatDate(dobMatch[1])
-    } else {
-      // Try to find any date that looks like DOB (between 1900-2010)
-      const datePattern = /\b([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.](19[0-9]{2}|200[0-9]|2010))\b/
-      const dateMatch = text.match(datePattern)
-      if (dateMatch) {
-        info.date_of_birth = this.formatDate(dateMatch[1])
-      }
     }
     
     // Extract nationality
@@ -493,55 +550,27 @@ class KYCService {
       info.document_number = idMatch[0]
     }
     
-    // Extract address (for national ID cards that include address)
-    const addressPattern = /\b(?:Address|Residence)[:\s]*([A-Za-z0-9\s,.-]+(?:\n[A-Za-z0-9\s,.-]+)*)/i
-    const addressMatch = text.match(addressPattern)
-    if (addressMatch) {
-      const address = addressMatch[1].trim()
-      // Simple address parsing
-      const lines = address.split('\n').map(line => line.trim()).filter(line => line.length > 0)
-      if (lines.length > 0) {
-        info.address_line1 = lines[0]
-        if (lines.length > 1) info.address_line2 = lines[1]
-        
-        // Try to extract city, state, postal code
-        const lastLine = lines[lines.length - 1]
-        const cityStateZip = lastLine.match(/([A-Za-z\s]+),\s*([A-Za-z\s]+)\s+([0-9A-Za-z\s-]+)/)
-        if (cityStateZip) {
-          info.city = cityStateZip[1].trim()
-          info.state = cityStateZip[2].trim()
-          info.postal_code = cityStateZip[3].trim()
-        }
-      }
-    }
-    
-    // Only return if we extracted meaningful data
     return Object.keys(info).length > 0 ? info : null
   }
   
   // Format date to YYYY-MM-DD
   formatDate(dateStr) {
     try {
-      // Handle different date formats: DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY
       const cleanDate = dateStr.replace(/\./g, '-').replace(/\//g, '-')
       const parts = cleanDate.split('-')
       
       if (parts.length === 3) {
         let day, month, year
         
-        // Determine format based on part lengths
         if (parts[0].length === 4) {
-          // YYYY-MM-DD
           year = parts[0]
           month = parts[1].padStart(2, '0')
           day = parts[2].padStart(2, '0')
         } else {
-          // DD-MM-YYYY or MM-DD-YYYY (assume DD-MM-YYYY for international)
           day = parts[0].padStart(2, '0')
           month = parts[1].padStart(2, '0')
           year = parts[2]
           
-          // Fix 2-digit years
           if (year.length === 2) {
             year = parseInt(year) < 30 ? `20${year}` : `19${year}`
           }
@@ -560,41 +589,27 @@ class KYCService {
     try {
       const kycProfileService = require('./kyc-profile.service')
       
-      // Get existing profile or create empty one
       let existingProfile = await kycProfileService.getProfileByUserId(userId)
       
       if (!existingProfile) {
-        // Create new profile with extracted data
         const profileData = {
           ...personalInfo,
-          country_of_residence: personalInfo.nationality || 'Unknown',
+          country_of_residence: personalInfo.nationality || '',
           profile_status: 'DRAFT'
         }
         
-        // Add default values for required fields
-        if (!profileData.gender) profileData.gender = 'other'
-        if (!profileData.employment_status) profileData.employment_status = 'employed'
-        if (!profileData.source_of_funds) profileData.source_of_funds = 'salary'
-        if (!profileData.trading_experience_level) profileData.trading_experience_level = 'beginner'
-        if (!profileData.risk_tolerance) profileData.risk_tolerance = 'medium'
-        if (!profileData.account_purpose) profileData.account_purpose = 'trading'
-        
         await kycProfileService.saveProfile(userId, profileData)
         
-        // Log auto-fill action
         await this.logAudit({
           kycDocumentId: kycDocumentId,
-          userId: 'system',
+          userId: null,
           action: 'AUTO_FILL',
           details: {
             profile_created: true,
             extracted_fields: Object.keys(personalInfo)
           }
         })
-        
-        console.log(`✅ Auto-filled KYC profile for user ${userId}`)
       } else {
-        // Update existing profile with missing information
         const updates = {}
         for (const [key, value] of Object.entries(personalInfo)) {
           if (!existingProfile[key] || existingProfile[key] === '') {
@@ -605,18 +620,15 @@ class KYCService {
         if (Object.keys(updates).length > 0) {
           await kycProfileService.saveProfile(userId, updates)
           
-          // Log auto-fill update
           await this.logAudit({
             kycDocumentId: kycDocumentId,
-            userId: 'system',
+            userId: null,
             action: 'AUTO_FILL',
             details: {
               profile_updated: true,
               updated_fields: Object.keys(updates)
             }
           })
-          
-          console.log(`✅ Updated KYC profile for user ${userId} with ${Object.keys(updates).length} fields`)
         }
       }
       
@@ -638,7 +650,6 @@ class KYCService {
       
       const extractedData = JSON.parse(document.extracted_data)
       
-      // Extract personal information for auto-fill
       const personalInfo = {}
       
       if (extractedData.first_name) personalInfo.first_name = extractedData.first_name
@@ -650,22 +661,13 @@ class KYCService {
         personalInfo.nationality = extractedData.nationality
         personalInfo.country_of_residence = extractedData.nationality
       }
-      if (extractedData.address_line1) personalInfo.address_line1 = extractedData.address_line1
-      if (extractedData.address_line2) personalInfo.address_line2 = extractedData.address_line2
-      if (extractedData.city) personalInfo.city = extractedData.city
-      if (extractedData.state) personalInfo.state = extractedData.state
-      if (extractedData.postal_code) personalInfo.postal_code = extractedData.postal_code
       if (extractedData.document_number) personalInfo.document_number = extractedData.document_number
-      
-      // If we have extracted personal info from OCR
-      if (extractedData.personal_info) {
-        Object.assign(personalInfo, extractedData.personal_info)
-      }
       
       return {
         success: true,
         extractedData: personalInfo,
         document_type: document.document_type,
+        document_side: document.document_side,
         document_status: document.status,
         has_auto_fill_data: Object.keys(personalInfo).length > 0
       }
@@ -702,11 +704,12 @@ class KYCService {
     
     const auditId = uuidv4()
     const safeUserId = (userId === 'system' || !userId) ? null : userId
+    
     await db.promise().query(
       `INSERT INTO kyc_audit_logs 
        (id, kyc_document_id, user_id, action, details, ip_address, user_agent)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [auditId, kycDocumentId, userId, action, JSON.stringify(details), ipAddress, userAgent]
+      [auditId, kycDocumentId, safeUserId, action, JSON.stringify(details), ipAddress, userAgent]
     )
   }
   
@@ -730,7 +733,6 @@ class KYCService {
       const cutoffDate = new Date()
       cutoffDate.setDate(cutoffDate.getDate() - daysToKeep)
       
-      // Get old rejected documents
       const [oldDocuments] = await db.promise().query(
         `SELECT id, encrypted_file_path 
          FROM kyc_documents 
@@ -743,19 +745,16 @@ class KYCService {
       
       for (const doc of oldDocuments) {
         try {
-          // Delete file from disk
           await fs.unlink(doc.encrypted_file_path)
           
-          // Delete from database
           await db.promise().query(
             `DELETE FROM kyc_documents WHERE id = ?`,
             [doc.id]
           )
           
-          // Log deletion
           await this.logAudit({
             kycDocumentId: doc.id,
-            userId: 'system',
+            userId: null,
             action: 'DELETE',
             details: { reason: 'cleanup', cutoff_date: cutoffDate }
           })
@@ -781,5 +780,4 @@ class KYCService {
   }
 }
 
-// Export the service instance
 module.exports = new KYCService()

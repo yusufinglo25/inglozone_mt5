@@ -145,4 +145,35 @@ router.post(
   kycController.updateProfileStatus
 )
 
+// src/routes/kyc.routes.js - Add these new routes
+
+// ========== DUAL-SIDE DOCUMENT ROUTES ==========
+
+// Upload front side of national ID (existing endpoint)
+// POST /api/kyc/upload - already exists
+
+// NEW: Upload back side of national ID
+router.post(
+  '/upload/back',
+  authMiddleware.verifyToken,
+  uploadMiddleware.uploadRateLimit,
+  uploadMiddleware.uploadSingle,
+  kycController.uploadBackDocument
+)
+
+// NEW: Check document completeness
+router.get(
+  '/documents/completeness',
+  authMiddleware.verifyToken,
+  kycController.getDocumentCompleteness
+)
+
+// ========== PHONE COUNTRY CODES ==========
+
+// NEW: Get country phone codes
+router.get(
+  '/country-codes',
+  authMiddleware.verifyToken,
+  kycController.getCountryCodes
+)
 module.exports = router

@@ -1,74 +1,97 @@
 // src/services/kyc-profile.service.js
 const db = require('../config/db')
 const { v4: uuidv4 } = require('uuid')
+const { validatePhoneNumber, getCountryByCode } = require('../data/country-codes')
 
 class KYCProfileService {
-  // Create or update KYC profile
-  // REPLACE the entire saveProfile method with this:
-
-async saveProfile(userId, profileData) {
-  try {
-    // Remove empty strings and null values
-    const cleanedData = {}
-    for (const [key, value] of Object.entries(profileData)) {
-      if (value !== '' && value !== null && value !== undefined) {
-        cleanedData[key] = value
+  // ENHANCED: Create or update KYC profile with phone country codes
+  async saveProfile(userId, profileData) {
+    try {
+      // Remove empty strings and null values
+      const cleanedData = {}
+      for (const [key, value] of Object.entries(profileData)) {
+        if (value !== '' && value !== null && value !== undefined) {
+          cleanedData[key] = value
+        }
       }
-    }
-    
-    // Remove 'first_name' and 'last_name' if they exist - these are in users table, not kyc_profiles
-    delete cleanedData.first_name
-    delete cleanedData.last_name
-    delete cleanedData.email
-    
-    // Check if profile already exists
-    const [existingProfile] = await db.promise().query(
-      `SELECT id FROM kyc_profiles WHERE user_id = ?`,
-      [userId]
-    )
-    
-    if (existingProfile.length > 0) {
-      // UPDATE existing profile - CORRECT SYNTAX
-      const setClause = Object.keys(cleanedData).map(key => `${key} = ?`).join(', ')
-      const values = Object.values(cleanedData)
       
-      const [result] = await db.promise().query(
-        `UPDATE kyc_profiles SET ${setClause} WHERE user_id = ?`,
-        [...values, userId]
+      // Remove fields that don't exist in kyc_profiles table
+      delete cleanedData.first_name
+      delete cleanedData.last_name
+      delete cleanedData.email
+      delete cleanedData.password
+      
+      // Validate phone numbers if provided
+      if (cleanedData.primary_phone_number && cleanedData.primary_phone_country_code) {
+        const validation = validatePhoneNumber(
+          cleanedData.primary_phone_country_code, 
+          cleanedData.primary_phone_number
+        )
+        if (!validation.valid) {
+          throw new Error(`Primary phone: ${validation.message}`)
+        }
+        // Store clean number without formatting
+        cleanedData.primary_phone_number = cleanedData.primary_phone_number.replace(/\D/g, '')
+      }
+      
+      if (cleanedData.secondary_phone_number && cleanedData.secondary_phone_country_code) {
+        const validation = validatePhoneNumber(
+          cleanedData.secondary_phone_country_code, 
+          cleanedData.secondary_phone_number
+        )
+        if (!validation.valid) {
+          throw new Error(`Secondary phone: ${validation.message}`)
+        }
+        cleanedData.secondary_phone_number = cleanedData.secondary_phone_number.replace(/\D/g, '')
+      }
+      
+      // Check if profile already exists
+      const [existingProfile] = await db.promise().query(
+        `SELECT id FROM kyc_profiles WHERE user_id = ?`,
+        [userId]
       )
       
-      return {
-        success: true,
-        message: 'KYC profile updated successfully',
-        action: 'updated',
-        profileId: existingProfile[0].id
+      if (existingProfile.length > 0) {
+        // UPDATE existing profile
+        const setClause = Object.keys(cleanedData).map(key => `${key} = ?`).join(', ')
+        const values = Object.values(cleanedData)
+        
+        const [result] = await db.promise().query(
+          `UPDATE kyc_profiles SET ${setClause} WHERE user_id = ?`,
+          [...values, userId]
+        )
+        
+        return {
+          success: true,
+          message: 'KYC profile updated successfully',
+          action: 'updated',
+          profileId: existingProfile[0].id
+        }
+      } else {
+        // CREATE new profile
+        const profileId = uuidv4()
+        
+        const columns = ['id', 'user_id', ...Object.keys(cleanedData)]
+        const placeholders = columns.map(() => '?').join(', ')
+        const values = [profileId, userId, ...Object.values(cleanedData)]
+        
+        const [result] = await db.promise().query(
+          `INSERT INTO kyc_profiles (${columns.join(', ')}) VALUES (${placeholders})`,
+          values
+        )
+        
+        return {
+          success: true,
+          message: 'KYC profile created successfully',
+          action: 'created',
+          profileId: profileId
+        }
       }
-    } else {
-      // CREATE new profile - CORRECT SYNTAX
-      const profileId = uuidv4()
-      
-      // Prepare columns and values for INSERT
-      const columns = ['id', 'user_id', ...Object.keys(cleanedData)]
-      const placeholders = columns.map(() => '?').join(', ')
-      const values = [profileId, userId, ...Object.values(cleanedData)]
-      
-      const [result] = await db.promise().query(
-        `INSERT INTO kyc_profiles (${columns.join(', ')}) VALUES (${placeholders})`,
-        values
-      )
-      
-      return {
-        success: true,
-        message: 'KYC profile created successfully',
-        action: 'created',
-        profileId: profileId
-      }
+    } catch (error) {
+      console.error('Error saving KYC profile:', error)
+      throw new Error('Failed to save KYC profile: ' + error.message)
     }
-  } catch (error) {
-    console.error('Error saving KYC profile:', error)
-    throw new Error('Failed to save KYC profile: ' + error.message)
   }
-}
   
   // Submit KYC profile for review
   async submitProfile(userId) {
@@ -96,7 +119,7 @@ async saveProfile(userId, profileData) {
     }
   }
   
-  // Get KYC profile by user ID
+  // ENHANCED: Get KYC profile by user ID with formatted phone numbers
   async getProfileByUserId(userId) {
     try {
       const [profiles] = await db.promise().query(
@@ -127,6 +150,17 @@ async saveProfile(userId, profileData) {
         } catch (e) {
           profile.document_extracted_data = null
         }
+      }
+      
+      // Format phone numbers for display
+      if (profile.primary_phone_country_code && profile.primary_phone_number) {
+        profile.primary_phone_formatted = 
+          `${profile.primary_phone_country_code} ${profile.primary_phone_number}`
+      }
+      
+      if (profile.secondary_phone_country_code && profile.secondary_phone_number) {
+        profile.secondary_phone_formatted = 
+          `${profile.secondary_phone_country_code} ${profile.secondary_phone_number}`
       }
       
       // Remove sensitive data
@@ -165,6 +199,14 @@ async saveProfile(userId, profileData) {
       
       const [profiles] = await db.promise().query(query, params)
       
+      // Format phone numbers for each profile
+      profiles.forEach(profile => {
+        if (profile.primary_phone_country_code && profile.primary_phone_number) {
+          profile.primary_phone_formatted = 
+            `${profile.primary_phone_country_code} ${profile.primary_phone_number}`
+        }
+      })
+      
       // Get total count
       let countQuery = `SELECT COUNT(*) as total FROM kyc_profiles`
       const countParams = []
@@ -202,9 +244,12 @@ async saveProfile(userId, profileData) {
         if (notes) updateData.review_notes = notes
       }
       
+      const setClause = Object.keys(updateData).map(key => `${key} = ?`).join(', ')
+      const values = [...Object.values(updateData), profileId]
+      
       const [result] = await db.promise().query(
-        `UPDATE kyc_profiles SET ? WHERE id = ?`,
-        [updateData, profileId]
+        `UPDATE kyc_profiles SET ${setClause} WHERE id = ?`,
+        values
       )
       
       if (result.affectedRows === 0) {
@@ -221,7 +266,7 @@ async saveProfile(userId, profileData) {
     }
   }
   
-  // Get KYC completion status
+  // ENHANCED: Get KYC completion status with document side awareness
   async getCompletionStatus(userId) {
     try {
       const [profile] = await db.promise().query(
@@ -230,27 +275,58 @@ async saveProfile(userId, profileData) {
       )
       
       const [documents] = await db.promise().query(
-        `SELECT status FROM kyc_documents 
-         WHERE user_id = ? AND status IN ('APPROVED', 'AUTO_VERIFIED', 'PENDING')
-         ORDER BY created_at DESC LIMIT 1`,
+        `SELECT document_type, document_side, status 
+         FROM kyc_documents 
+         WHERE user_id = ?`,
         [userId]
       )
       
       const hasProfile = profile.length > 0
-      const hasDocument = documents.length > 0
       const profileStatus = hasProfile ? profile[0].profile_status : 'NOT_STARTED'
-      const documentStatus = hasDocument ? documents[0].status : 'NOT_SUBMITTED'
+      
+      // Check document completeness with side awareness
+      const hasPassport = documents.some(d => d.document_type === 'passport')
+      const hasNationalIdFront = documents.some(d => d.document_type === 'national_id_front')
+      const hasNationalIdBack = documents.some(d => d.document_type === 'national_id_back')
+      const hasCompleteNationalId = hasNationalIdFront && hasNationalIdBack
+      
+      // Get document status based on most restrictive
+      let documentStatus = 'NOT_SUBMITTED'
+      let documentApprovalStatus = 'PENDING'
+      
+      const relevantDocs = documents.filter(d => 
+        d.document_type === 'passport' || 
+        d.document_type === 'national_id_front' || 
+        d.document_type === 'national_id_back'
+      )
+      
+      if (relevantDocs.length > 0) {
+        const allApproved = relevantDocs.every(d => d.status === 'APPROVED')
+        const anyRejected = relevantDocs.some(d => d.status === 'REJECTED')
+        const anyPending = relevantDocs.some(d => d.status === 'PENDING' || d.status === 'AUTO_VERIFIED')
+        
+        if (allApproved) {
+          documentStatus = 'APPROVED'
+          documentApprovalStatus = 'APPROVED'
+        } else if (anyRejected) {
+          documentStatus = 'REJECTED'
+          documentApprovalStatus = 'REJECTED'
+        } else if (anyPending) {
+          documentStatus = 'PENDING'
+          documentApprovalStatus = 'PENDING'
+        }
+      }
       
       // Calculate completion percentage
       let completion = 0
       let steps = []
       
-      // Step 1: Personal Information (30%)
+      // Step 1: Personal Information (20%)
       if (hasProfile) {
         const p = profile[0]
         const personalInfoComplete = p.date_of_birth && p.nationality && p.country_of_residence && p.address_line1
         if (personalInfoComplete) {
-          completion += 30
+          completion += 20
           steps.push({ 
             name: 'Personal Information', 
             completed: true,
@@ -264,10 +340,27 @@ async saveProfile(userId, profileData) {
           })
         }
         
-        // Step 2: Financial Information (30%)
+        // Step 2: Contact Information (15%) - NEW
+        const contactComplete = p.primary_phone_country_code && p.primary_phone_number
+        if (contactComplete) {
+          completion += 15
+          steps.push({ 
+            name: 'Contact Information', 
+            completed: true,
+            details: 'Primary phone provided'
+          })
+        } else {
+          steps.push({ 
+            name: 'Contact Information', 
+            completed: false,
+            details: 'Phone number required'
+          })
+        }
+        
+        // Step 3: Financial Information (25%)
         const financialInfoComplete = p.employment_status && p.annual_income > 0 && p.source_of_funds
         if (financialInfoComplete) {
-          completion += 30
+          completion += 25
           steps.push({ 
             name: 'Financial Information', 
             completed: true,
@@ -281,7 +374,7 @@ async saveProfile(userId, profileData) {
           })
         }
         
-        // Step 3: Experience & Purpose (10%)
+        // Step 4: Experience & Purpose (10%)
         const experienceComplete = p.trading_experience_level && p.risk_tolerance && p.account_purpose
         if (experienceComplete) {
           completion += 10
@@ -298,59 +391,75 @@ async saveProfile(userId, profileData) {
           })
         }
       } else {
-        steps.push({ 
-          name: 'Personal Information', 
-          completed: false,
-          details: 'Not started'
-        })
-        steps.push({ 
-          name: 'Financial Information', 
-          completed: false,
-          details: 'Not started'
-        })
-        steps.push({ 
-          name: 'Experience & Purpose', 
-          completed: false,
-          details: 'Not started'
-        })
+        steps.push({ name: 'Personal Information', completed: false, details: 'Not started' })
+        steps.push({ name: 'Contact Information', completed: false, details: 'Not started' })
+        steps.push({ name: 'Financial Information', completed: false, details: 'Not started' })
+        steps.push({ name: 'Experience & Purpose', completed: false, details: 'Not started' })
       }
       
-      // Step 4: ID Document (30%)
-      if (hasDocument) {
-        if (documentStatus === 'APPROVED') {
-          completion += 30
+      // Step 5: ID Document (30%) - Enhanced with side tracking
+      let idCompletion = 0
+      if (hasPassport) {
+        idCompletion = 30
+        if (documentApprovalStatus === 'APPROVED') {
           steps.push({ 
-            name: 'ID Verification', 
+            name: 'ID Verification (Passport)', 
             completed: true, 
             status: 'APPROVED',
-            details: 'ID document verified'
+            details: 'Passport verified'
           })
-        } else if (documentStatus === 'AUTO_VERIFIED') {
-          completion += 20
+        } else {
           steps.push({ 
-            name: 'ID Verification', 
+            name: 'ID Verification (Passport)', 
             completed: true, 
-            status: 'AUTO_VERIFIED',
-            details: 'ID document auto-verified, awaiting admin approval'
-          })
-        } else if (documentStatus === 'PENDING') {
-          completion += 15
-          steps.push({ 
-            name: 'ID Verification', 
-            completed: true, 
-            status: 'PENDING',
-            details: 'ID document submitted, awaiting verification'
+            status: documentApprovalStatus,
+            details: 'Passport submitted'
           })
         }
+        completion += idCompletion
+      } else if (hasCompleteNationalId) {
+        idCompletion = 30
+        if (documentApprovalStatus === 'APPROVED') {
+          steps.push({ 
+            name: 'ID Verification (National ID)', 
+            completed: true, 
+            status: 'APPROVED',
+            details: 'Both sides verified'
+          })
+        } else {
+          steps.push({ 
+            name: 'ID Verification (National ID)', 
+            completed: true, 
+            status: documentApprovalStatus,
+            details: 'Both sides submitted'
+          })
+        }
+        completion += idCompletion
       } else {
-        steps.push({ 
-          name: 'ID Verification', 
-          completed: false,
-          details: 'No ID document uploaded'
-        })
+        if (hasNationalIdFront && !hasNationalIdBack) {
+          completion += 15
+          steps.push({ 
+            name: 'ID Verification (Front Only)', 
+            completed: true,
+            details: 'Please upload back side'
+          })
+        } else if (hasNationalIdBack && !hasNationalIdFront) {
+          completion += 15
+          steps.push({ 
+            name: 'ID Verification (Back Only)', 
+            completed: true,
+            details: 'Please upload front side'
+          })
+        } else {
+          steps.push({ 
+            name: 'ID Verification', 
+            completed: false,
+            details: 'Upload your ID'
+          })
+        }
       }
       
-      const canTrade = completion >= 100 && profileStatus === 'APPROVED' && documentStatus === 'APPROVED'
+      const canTrade = completion >= 100 && profileStatus === 'APPROVED' && documentApprovalStatus === 'APPROVED'
       const canDeposit = completion >= 70 && documentStatus !== 'REJECTED'
       
       return {
@@ -358,10 +467,18 @@ async saveProfile(userId, profileData) {
         steps,
         profileStatus,
         documentStatus,
+        documentDetails: {
+          hasPassport,
+          hasNationalIdFront,
+          hasNationalIdBack,
+          hasCompleteNationalId
+        },
         canTrade,
         canDeposit,
         nextAction: !hasProfile ? 'fill_profile' : 
-                   !hasDocument ? 'upload_id' :
+                   !profile[0]?.primary_phone_number ? 'add_phone' :
+                   !hasPassport && !hasNationalIdFront ? 'upload_id_front' :
+                   !hasPassport && hasNationalIdFront && !hasNationalIdBack ? 'upload_id_back' :
                    profileStatus === 'DRAFT' ? 'submit_profile' :
                    'wait_for_approval'
       }
@@ -371,7 +488,7 @@ async saveProfile(userId, profileData) {
     }
   }
   
-  // Validate profile data
+  // ENHANCED: Validate profile data with phone validation
   validateProfileData(data) {
     const errors = []
     
@@ -383,16 +500,26 @@ async saveProfile(userId, profileData) {
     if (!data.city) errors.push('City is required')
     if (!data.postal_code) errors.push('Postal code is required')
     
+    // Phone validation
+    if (!data.primary_phone_country_code) {
+      errors.push('Phone country code is required')
+    }
+    if (!data.primary_phone_number) {
+      errors.push('Phone number is required')
+    } else if (data.primary_phone_country_code) {
+      // Will be validated in saveProfile
+    }
+    
     // Validate date of birth (must be at least 18 years old)
     if (data.date_of_birth) {
       const dob = new Date(data.date_of_birth)
       const today = new Date()
       let age = today.getFullYear() - dob.getFullYear()
-    const monthDiff = today.getMonth() - dob.getMonth()
+      const monthDiff = today.getMonth() - dob.getMonth()
 
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-    age = age - 1  // ✅ Using let variable
-    }
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+        age = age - 1
+      }
       
       if (age < 18) {
         errors.push('You must be at least 18 years old')
@@ -433,12 +560,17 @@ async saveProfile(userId, profileData) {
   // Get auto-fill suggestions from user's KYC documents
   async getAutoFillSuggestions(userId) {
     try {
-      // Get user's latest KYC document with extracted data
       const [documents] = await db.promise().query(
-        `SELECT extracted_data, document_type 
+        `SELECT extracted_data, document_type, document_side
          FROM kyc_documents 
          WHERE user_id = ? AND extracted_data IS NOT NULL
-         ORDER BY created_at DESC LIMIT 1`,
+         ORDER BY 
+           CASE document_side
+             WHEN 'front' THEN 1
+             WHEN 'single' THEN 2
+             ELSE 3
+           END,
+           created_at DESC`,
         [userId]
       )
       
@@ -446,37 +578,39 @@ async saveProfile(userId, profileData) {
         return { success: false, message: 'No KYC document with extracted data found' }
       }
       
-      const document = documents[0]
-      const extractedData = JSON.parse(document.extracted_data)
-      
-      // Extract suggestions from OCR data
       const suggestions = {}
+      let bestDocument = null
       
-      // Personal information suggestions
-      if (extractedData.first_name) suggestions.first_name = extractedData.first_name
-      if (extractedData.last_name) suggestions.last_name = extractedData.last_name
-      if (extractedData.date_of_birth) suggestions.date_of_birth = extractedData.date_of_birth
-      if (extractedData.place_of_birth) suggestions.place_of_birth = extractedData.place_of_birth
-      if (extractedData.gender) suggestions.gender = extractedData.gender
-      if (extractedData.nationality) {
-        suggestions.nationality = extractedData.nationality
-        suggestions.country_of_residence = extractedData.nationality
-      }
-      if (extractedData.address_line1) suggestions.address_line1 = extractedData.address_line1
-      if (extractedData.address_line2) suggestions.address_line2 = extractedData.address_line2
-      if (extractedData.city) suggestions.city = extractedData.city
-      if (extractedData.state) suggestions.state = extractedData.state
-      if (extractedData.postal_code) suggestions.postal_code = extractedData.postal_code
-      
-      // If we have personal_info from OCR
-      if (extractedData.personal_info) {
-        Object.assign(suggestions, extractedData.personal_info)
+      // Merge data from multiple documents, prioritizing front/single
+      for (const doc of documents) {
+        const extractedData = JSON.parse(doc.extracted_data)
+        
+        if (doc.document_side === 'front' || doc.document_side === 'single') {
+          bestDocument = doc
+        }
+        
+        // Personal information suggestions
+        if (extractedData.first_name && !suggestions.first_name) 
+          suggestions.first_name = extractedData.first_name
+        if (extractedData.last_name && !suggestions.last_name) 
+          suggestions.last_name = extractedData.last_name
+        if (extractedData.date_of_birth && !suggestions.date_of_birth) 
+          suggestions.date_of_birth = extractedData.date_of_birth
+        if (extractedData.place_of_birth && !suggestions.place_of_birth) 
+          suggestions.place_of_birth = extractedData.place_of_birth
+        if (extractedData.gender && !suggestions.gender) 
+          suggestions.gender = extractedData.gender
+        if (extractedData.nationality && !suggestions.nationality) {
+          suggestions.nationality = extractedData.nationality
+          suggestions.country_of_residence = extractedData.nationality
+        }
       }
       
       return {
         success: true,
         suggestions,
-        document_type: document.document_type,
+        document_type: bestDocument?.document_type,
+        document_side: bestDocument?.document_side,
         source: 'ocr_extraction',
         confidence: 'medium'
       }
@@ -488,5 +622,4 @@ async saveProfile(userId, profileData) {
   }
 }
 
-// Export the service instance
 module.exports = new KYCProfileService()
