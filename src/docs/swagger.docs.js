@@ -60,7 +60,8 @@
  *                 format: email
  *               password:
  *                 type: string
- *                 minLength: 6
+ *                 minLength: 8
+ *                 description: Must contain at least one uppercase letter, one lowercase letter, and one special character.
  *     responses:
  *       200:
  *         description: OTP sent
@@ -262,7 +263,8 @@
  *                 type: string
  *               password:
  *                 type: string
- *                 minLength: 6
+ *                 minLength: 8
+ *                 description: Must contain at least one uppercase letter, one lowercase letter, and one special character.
  *     responses:
  *       200:
  *         description: Profile completed
@@ -349,10 +351,11 @@
  *                 type: string
  *               password:
  *                 type: string
- *                 minLength: 6
+ *                 minLength: 8
+ *                 description: Must contain at least one uppercase letter, one lowercase letter, and one special character.
  *               confirmPassword:
  *                 type: string
- *                 minLength: 6
+ *                 minLength: 8
  *     responses:
  *       200:
  *         description: Profile completed successfully
@@ -397,7 +400,8 @@
  *           format: email
  *         password:
  *           type: string
- *           minLength: 6
+ *           minLength: 8
+ *           description: Must contain at least one uppercase letter, one lowercase letter, and one special character.
  *
  *     LoginRequest:
  *       type: object

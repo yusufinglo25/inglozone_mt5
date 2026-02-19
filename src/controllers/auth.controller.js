@@ -1,4 +1,5 @@
 const service = require('../services/auth.service')
+const { validatePasswordPolicy } = require('../utils/password-policy')
 
 // Helper function to add CORS headers
 const addCorsHeaders = (res, req) => {
@@ -11,7 +12,22 @@ const addCorsHeaders = (res, req) => {
 // OLD FUNCTIONS - KEEP AS IS (commented out since we're using OTP now)
 exports.register = async (req, res) => {
   try {
-    const user = await service.register(req.body)
+    const { firstName, lastName, email, password } = req.body
+
+    if (!firstName || !lastName || !email || !password) {
+      res = addCorsHeaders(res, req);
+      return res.status(400).json({
+        error: 'All fields are required'
+      })
+    }
+
+    const passwordError = validatePasswordPolicy(password)
+    if (passwordError) {
+      res = addCorsHeaders(res, req);
+      return res.status(400).json({ error: passwordError })
+    }
+
+    const user = await service.register({ firstName, lastName, email, password })
     res = addCorsHeaders(res, req);
     res.json(user)
   } catch (err) {
@@ -43,10 +59,11 @@ exports.registerWithOTP = async (req, res) => {
       })
     }
     
-    if (password.length < 6) {
+    const passwordError = validatePasswordPolicy(password)
+    if (passwordError) {
       res = addCorsHeaders(res, req);
       return res.status(400).json({ 
-        error: 'Password must be at least 6 characters' 
+        error: passwordError 
       })
     }
     
@@ -159,10 +176,11 @@ exports.completeProfile = async (req, res) => {
       })
     }
     
-    if (password.length < 6) {
+    const passwordError = validatePasswordPolicy(password)
+    if (passwordError) {
       res = addCorsHeaders(res, req);
       return res.status(400).json({ 
-        error: 'Password must be at least 6 characters' 
+        error: passwordError 
       })
     }
     
