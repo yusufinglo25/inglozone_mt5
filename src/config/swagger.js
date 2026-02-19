@@ -246,7 +246,61 @@ function getSwaggerSpec() {
             }
           }
         },
-        ...buildAutoPathDocs()
+        ...buildAutoPathDocs(),
+        '/api/kyc/status': {
+          get: {
+            tags: ['Kyc'],
+            summary: 'Get current user KYC workflow status',
+            responses: {
+              200: {
+                description: 'KYC status fetched successfully',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        success: { type: 'boolean', example: true },
+                        data: {
+                          type: 'object',
+                          properties: {
+                            status: { type: 'string', example: 'NOT_SUBMITTED', enum: ['NOT_SUBMITTED', 'IN_PROGRESS', 'PENDING', 'APPROVED', 'REJECTED'] },
+                            latestDocument: { type: 'object', nullable: true, additionalProperties: true },
+                            allDocuments: { type: 'array', items: { type: 'object', additionalProperties: true } },
+                            profileStatus: { type: 'string', example: 'NOT_STARTED', enum: ['NOT_STARTED', 'DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'] },
+                            documentStatus: { type: 'string', example: 'NOT_SUBMITTED', enum: ['NOT_SUBMITTED', 'PENDING', 'AUTO_VERIFIED', 'APPROVED', 'REJECTED'] },
+                            nextAction: { type: 'string', example: 'fill_profile' },
+                            completion: { type: 'number', example: 0 }
+                          }
+                        }
+                      }
+                    },
+                    examples: {
+                      notStarted: {
+                        value: {
+                          success: true,
+                          data: {
+                            status: 'NOT_SUBMITTED',
+                            latestDocument: null,
+                            allDocuments: [],
+                            profileStatus: 'NOT_STARTED',
+                            documentStatus: 'NOT_SUBMITTED',
+                            nextAction: 'fill_profile',
+                            completion: 0
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              400: getDefaultJsonResponses()['400'],
+              401: getDefaultJsonResponses()['401'],
+              403: getDefaultJsonResponses()['403'],
+              404: getDefaultJsonResponses()['404'],
+              500: getDefaultJsonResponses()['500']
+            }
+          }
+        }
       }
     },
     apis: ['./src/docs/*.js']
