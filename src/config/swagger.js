@@ -32,22 +32,13 @@ function getRouteMountMap() {
   return routeMountMap
 }
 
-function getDefaultJsonResponses(successExample = {}) {
+function getDefaultJsonResponses() {
   return {
     200: {
       description: 'Success',
       content: {
         'application/json': {
-          schema: { $ref: '#/components/schemas/ApiSuccessResponse' },
-          examples: {
-            success: {
-              value: {
-                success: true,
-                message: 'Request completed successfully',
-                data: successExample
-              }
-            }
-          }
+          schema: { type: 'object', additionalProperties: true }
         }
       }
     },
@@ -59,8 +50,6 @@ function getDefaultJsonResponses(successExample = {}) {
           examples: {
             badRequest: {
               value: {
-                success: false,
-                message: 'Validation failed',
                 error: 'Bad request'
               }
             }
@@ -76,8 +65,6 @@ function getDefaultJsonResponses(successExample = {}) {
           examples: {
             unauthorized: {
               value: {
-                success: false,
-                message: 'Authentication required',
                 error: 'Unauthorized'
               }
             }
@@ -93,8 +80,6 @@ function getDefaultJsonResponses(successExample = {}) {
           examples: {
             forbidden: {
               value: {
-                success: false,
-                message: 'Insufficient permissions',
                 error: 'Forbidden'
               }
             }
@@ -110,9 +95,7 @@ function getDefaultJsonResponses(successExample = {}) {
           examples: {
             notFound: {
               value: {
-                success: false,
-                message: 'Resource not found',
-                error: 'Not Found'
+                error: 'Not found'
               }
             }
           }
@@ -127,9 +110,7 @@ function getDefaultJsonResponses(successExample = {}) {
           examples: {
             serverError: {
               value: {
-                success: false,
-                message: 'Something went wrong!',
-                error: 'Internal Server Error'
+                error: 'Something went wrong!'
               }
             }
           }
@@ -138,6 +119,24 @@ function getDefaultJsonResponses(successExample = {}) {
     }
   }
 }
+
+function toOpenApiPath(pathname) {
+  return pathname.replace(/:([A-Za-z0-9_]+)/g, '{$1}')
+}
+
+const MANUALLY_DOCUMENTED_OPERATIONS = new Set([
+  'POST /api/auth/register',
+  'POST /api/auth/register-with-otp',
+  'POST /api/auth/verify-otp',
+  'POST /api/auth/resend-otp',
+  'POST /api/auth/login',
+  'POST /api/auth/check-email',
+  'POST /api/auth/complete-profile',
+  'GET /api/auth/status',
+  'GET /api/auth/google',
+  'GET /api/auth/google/callback',
+  'POST /api/user/complete-profile'
+])
 
 function buildAutoPathDocs() {
   const routesDir = path.join(__dirname, '../routes')
@@ -158,20 +157,23 @@ function buildAutoPathDocs() {
       const method = match[1]
       const localPath = match[2]
       const fullPath = `${mountPrefix}${localPath}`.replace(/\/+/g, '/')
+      const openApiPath = toOpenApiPath(fullPath)
+      const operationKey = `${method.toUpperCase()} ${openApiPath}`
 
-      if (!paths[fullPath]) {
-        paths[fullPath] = {}
+      if (MANUALLY_DOCUMENTED_OPERATIONS.has(operationKey)) {
+        continue
       }
 
-      if (!paths[fullPath][method]) {
+      if (!paths[openApiPath]) {
+        paths[openApiPath] = {}
+      }
+
+      if (!paths[openApiPath][method]) {
         const tag = mountPrefix.replace('/api/', '').replace('/', '') || 'General'
-        paths[fullPath][method] = {
+        paths[openApiPath][method] = {
           tags: [tag.charAt(0).toUpperCase() + tag.slice(1)],
-          summary: `Auto-generated documentation for ${method.toUpperCase()} ${fullPath}`,
-          responses: getDefaultJsonResponses({
-            endpoint: fullPath,
-            method: method.toUpperCase()
-          })
+          summary: `Auto-generated documentation for ${method.toUpperCase()} ${openApiPath}`,
+          responses: getDefaultJsonResponses()
         }
       }
     }
@@ -203,20 +205,16 @@ function getSwaggerSpec() {
         schemas: {
           ApiSuccessResponse: {
             type: 'object',
-            properties: {
-              success: { type: 'boolean', example: true },
-              message: { type: 'string', example: 'Request completed successfully' },
-              data: { type: 'object', additionalProperties: true }
-            }
+            additionalProperties: true
           },
           ApiErrorResponse: {
             type: 'object',
             properties: {
-              success: { type: 'boolean', example: false },
-              message: { type: 'string', example: 'Request failed' },
               error: { type: 'string', example: 'Bad request' },
+              message: { type: 'string', example: 'Request failed' },
               details: { type: 'object', additionalProperties: true }
-            }
+            },
+            additionalProperties: true
           }
         }
       },
@@ -267,7 +265,7 @@ function getSwaggerSpec() {
                             latestDocument: { type: 'object', nullable: true, additionalProperties: true },
                             allDocuments: { type: 'array', items: { type: 'object', additionalProperties: true } },
                             profileStatus: { type: 'string', example: 'NOT_STARTED', enum: ['NOT_STARTED', 'DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'] },
-                            documentStatus: { type: 'string', example: 'NOT_SUBMITTED', enum: ['NOT_SUBMITTED', 'PENDING', 'AUTO_VERIFIED', 'APPROVED', 'REJECTED'] },
+                            documentStatus: { type: 'string', example: 'NOT_SUBMITTED', enum: ['NOT_SUBMITTED', 'PENDING', 'APPROVED', 'REJECTED'] },
                             nextAction: { type: 'string', example: 'fill_profile' },
                             completion: { type: 'number', example: 0 }
                           }
