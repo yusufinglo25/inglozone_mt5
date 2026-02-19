@@ -84,7 +84,7 @@ function getSwaggerSpec() {
         description: 'Auto-generated OpenAPI docs from existing route files + optional manual JSDoc docs.'
       },
       servers: [
-        { url: process.env.BASE_URL || 'http://localhost:4000' }
+        { url: process.env.BASE_URL || 'https://temp.inglozone.com' }
       ],
       paths: {
         '/health': {

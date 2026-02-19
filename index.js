@@ -6,6 +6,9 @@ const { swaggerUi, getSwaggerSpec } = require('./src/config/swagger')
 const jwt = require('jsonwebtoken')
 
 const app = express()
+
+const swaggerUiAssetsPath = path.dirname(require.resolve('swagger-ui-dist/package.json'))
+app.use('/swagger-ui-assets', express.static(swaggerUiAssetsPath))
 const migrate = require('./src/config/migrate')
 migrate()
 // const passport = require('passport') // Comment out for now
