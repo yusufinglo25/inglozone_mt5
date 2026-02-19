@@ -1,7 +1,8 @@
 require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
-const { swaggerJsdoc, swaggerUi, options } = require('./src/config/swagger')
+const path = require('path')
+const { swaggerUi, getSwaggerSpec } = require('./src/config/swagger')
 const jwt = require('jsonwebtoken')
 
 const app = express()
@@ -14,9 +15,18 @@ if (process.env.NODE_ENV === 'production') {
   require('./src/jobs/cleanup')
 }
 
-const specs = swaggerJsdoc(options)
+app.use('/api-docs', swaggerUi.serve, (req, res, next) => {
+  const specs = getSwaggerSpec()
+  return swaggerUi.setup(specs)(req, res, next)
+})
 
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs))
+app.get('/api-docs-json', (req, res) => {
+  res.json(getSwaggerSpec())
+})
+
+app.get('/api-documentation.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'src/docs/api-documentation.html'))
+})
 // app.use(passport.initialize()) // Comment out for now
 
 // 1. Global CORS headers middleware
