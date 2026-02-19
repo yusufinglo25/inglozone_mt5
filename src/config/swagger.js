@@ -1,20 +1,39 @@
-const fs = require('fs')
-const path = require('path')
+
 const swaggerJsdoc = require('swagger-jsdoc')
+const fs = require('fs')
 const swaggerUi = require('swagger-ui-express')
+const path = require('path')
 
+const swaggerJsdoc = require('swagger-jsdoc')
+const options = {
+const swaggerUi = require('swagger-ui-express')
+  definition: {
+
+    openapi: '3.0.0',
 function getRouteMountMap() {
+    info: {
   const indexPath = path.join(__dirname, '../../index.js')
+      title: 'Trading Platform API',
   const content = fs.readFileSync(indexPath, 'utf8')
+      version: '1.0.0'
 
+    },
   const variableToRouteFile = {}
+    servers: [
   const requireRegex = /const\s+(\w+)\s*=\s*require\(['"](\.\/src\/routes\/[\w.-]+)['"]\)/g
+      { url: process.env.BASE_URL || 'http://localhost:4000' }
   let requireMatch
+    ]
 
+  },
   while ((requireMatch = requireRegex.exec(content)) !== null) {
+  apis: ['./src/routes/*.js']
     variableToRouteFile[requireMatch[1]] = `${requireMatch[2]}.js`
+}
   }
 
+
+module.exports = { swaggerJsdoc, swaggerUi, options }
   const routeMountMap = {}
   const useRegex = /app\.use\(['"]([^'"]+)['"],\s*(\w+)\)/g
   let useMatch
@@ -86,6 +105,16 @@ function getSwaggerSpec() {
       servers: [
         { url: process.env.BASE_URL || 'https://temp.inglozone.com' }
       ],
+      components: {
+        securitySchemes: {
+          bearerAuth: {
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'JWT'
+          }
+        }
+      },
+      security: [{ bearerAuth: [] }],
       paths: {
         '/health': {
           get: {
