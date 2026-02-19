@@ -46,6 +46,7 @@
     "sharp": "^0.34.5",
     "stripe": "^20.3.0",
     "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-dist": "^5.31.1",
     "swagger-ui-express": "^5.0.1",
     "tesseract.js": "^7.0.0",
     "tesseract.js-node": "^0.1.0",
