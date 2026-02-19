@@ -211,21 +211,40 @@ async getCountryCodes(req, res) {
   async getKYCStatus(req, res) {
     try {
       const userId = req.user.id
-      
+      const kycProfileService = require('../services/kyc-profile.service')
+
       const documents = await kycService.getUserKYCDocuments(userId)
-      
+      const completionStatus = await kycProfileService.getCompletionStatus(userId)
+
       const latestDoc = documents.length > 0 ? documents[0] : null
-      const status = latestDoc ? latestDoc.status : 'NOT_SUBMITTED'
-      
+      const hasAnyDocument = documents.length > 0
+      const hasRequiredDocument = completionStatus.documentDetails.hasPassport || completionStatus.documentDetails.hasCompleteNationalId
+
+      let status = 'NOT_SUBMITTED'
+
+      if (completionStatus.profileStatus === 'REJECTED' || completionStatus.documentStatus === 'REJECTED') {
+        status = 'REJECTED'
+      } else if (completionStatus.profileStatus === 'APPROVED' && completionStatus.documentStatus === 'APPROVED') {
+        status = 'APPROVED'
+      } else if (completionStatus.profileStatus === 'SUBMITTED' && hasRequiredDocument) {
+        status = 'PENDING'
+      } else if (hasAnyDocument || completionStatus.profileStatus === 'DRAFT') {
+        status = 'IN_PROGRESS'
+      }
+
       res.json({
         success: true,
         data: {
           status,
           latestDocument: latestDoc,
-          allDocuments: documents
+          allDocuments: documents,
+          profileStatus: completionStatus.profileStatus,
+          documentStatus: completionStatus.documentStatus,
+          nextAction: completionStatus.nextAction,
+          completion: completionStatus.completion
         }
       })
-      
+
     } catch (error) {
       console.error('Error getting KYC status:', error)
       res.status(500).json({
