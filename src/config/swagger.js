@@ -32,6 +32,113 @@ function getRouteMountMap() {
   return routeMountMap
 }
 
+function getDefaultJsonResponses(successExample = {}) {
+  return {
+    200: {
+      description: 'Success',
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/ApiSuccessResponse' },
+          examples: {
+            success: {
+              value: {
+                success: true,
+                message: 'Request completed successfully',
+                data: successExample
+              }
+            }
+          }
+        }
+      }
+    },
+    400: {
+      description: 'Bad request',
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/ApiErrorResponse' },
+          examples: {
+            badRequest: {
+              value: {
+                success: false,
+                message: 'Validation failed',
+                error: 'Bad request'
+              }
+            }
+          }
+        }
+      }
+    },
+    401: {
+      description: 'Unauthorized',
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/ApiErrorResponse' },
+          examples: {
+            unauthorized: {
+              value: {
+                success: false,
+                message: 'Authentication required',
+                error: 'Unauthorized'
+              }
+            }
+          }
+        }
+      }
+    },
+    403: {
+      description: 'Forbidden',
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/ApiErrorResponse' },
+          examples: {
+            forbidden: {
+              value: {
+                success: false,
+                message: 'Insufficient permissions',
+                error: 'Forbidden'
+              }
+            }
+          }
+        }
+      }
+    },
+    404: {
+      description: 'Not found',
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/ApiErrorResponse' },
+          examples: {
+            notFound: {
+              value: {
+                success: false,
+                message: 'Resource not found',
+                error: 'Not Found'
+              }
+            }
+          }
+        }
+      }
+    },
+    500: {
+      description: 'Internal server error',
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/ApiErrorResponse' },
+          examples: {
+            serverError: {
+              value: {
+                success: false,
+                message: 'Something went wrong!',
+                error: 'Internal Server Error'
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 function buildAutoPathDocs() {
   const routesDir = path.join(__dirname, '../routes')
   const files = fs.readdirSync(routesDir).filter((file) => file.endsWith('.routes.js'))
@@ -61,11 +168,10 @@ function buildAutoPathDocs() {
         paths[fullPath][method] = {
           tags: [tag.charAt(0).toUpperCase() + tag.slice(1)],
           summary: `Auto-generated documentation for ${method.toUpperCase()} ${fullPath}`,
-          responses: {
-            200: {
-              description: 'Success'
-            }
-          }
+          responses: getDefaultJsonResponses({
+            endpoint: fullPath,
+            method: method.toUpperCase()
+          })
         }
       }
     }
@@ -93,6 +199,25 @@ function getSwaggerSpec() {
             scheme: 'bearer',
             bearerFormat: 'JWT'
           }
+        },
+        schemas: {
+          ApiSuccessResponse: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean', example: true },
+              message: { type: 'string', example: 'Request completed successfully' },
+              data: { type: 'object', additionalProperties: true }
+            }
+          },
+          ApiErrorResponse: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean', example: false },
+              message: { type: 'string', example: 'Request failed' },
+              error: { type: 'string', example: 'Bad request' },
+              details: { type: 'object', additionalProperties: true }
+            }
+          }
         }
       },
       security: [{ bearerAuth: [] }],
@@ -101,10 +226,23 @@ function getSwaggerSpec() {
           get: {
             tags: ['Health'],
             summary: 'Health check endpoint',
+            security: [],
             responses: {
               200: {
-                description: 'Server is healthy'
-              }
+                description: 'Server is healthy',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        status: { type: 'string', example: 'ok' },
+                        timestamp: { type: 'string', format: 'date-time' }
+                      }
+                    }
+                  }
+                }
+              },
+              500: getDefaultJsonResponses()['500']
             }
           }
         },
