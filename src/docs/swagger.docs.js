@@ -5,6 +5,7 @@
  *   - name: Auth
  *   - name: User
  *   - name: Wallet
+ *   - name: Kyc
  */
 
 /**
@@ -17,6 +18,9 @@
  *     requestBody:
  *       required: true
  *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             $ref: '#/components/schemas/RegisterRequest'
  *         application/json:
  *           schema:
  *             $ref: '#/components/schemas/RegisterRequest'
@@ -47,22 +51,12 @@
  *     requestBody:
  *       required: true
  *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             $ref: '#/components/schemas/RegisterRequest'
  *         application/json:
  *           schema:
- *             type: object
- *             required: [firstName, lastName, email, password]
- *             properties:
- *               firstName:
- *                 type: string
- *               lastName:
- *                 type: string
- *               email:
- *                 type: string
- *                 format: email
- *               password:
- *                 type: string
- *                 minLength: 8
- *                 description: Must contain at least one uppercase letter, one lowercase letter, and one special character.
+ *             $ref: '#/components/schemas/RegisterRequest'
  *     responses:
  *       200:
  *         description: OTP sent
@@ -92,16 +86,12 @@
  *     requestBody:
  *       required: true
  *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             $ref: '#/components/schemas/VerifyOtpRequest'
  *         application/json:
  *           schema:
- *             type: object
- *             required: [tempToken, otp]
- *             properties:
- *               tempToken:
- *                 type: string
- *               otp:
- *                 type: string
- *                 pattern: ^\d{6}$
+ *             $ref: '#/components/schemas/VerifyOtpRequest'
  *     responses:
  *       201:
  *         description: Account created
@@ -137,13 +127,12 @@
  *     requestBody:
  *       required: true
  *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             $ref: '#/components/schemas/ResendOtpRequest'
  *         application/json:
  *           schema:
- *             type: object
- *             required: [tempToken]
- *             properties:
- *               tempToken:
- *                 type: string
+ *             $ref: '#/components/schemas/ResendOtpRequest'
  *     responses:
  *       200:
  *         description: OTP resent
@@ -172,6 +161,9 @@
  *     requestBody:
  *       required: true
  *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             $ref: '#/components/schemas/LoginRequest'
  *         application/json:
  *           schema:
  *             $ref: '#/components/schemas/LoginRequest'
@@ -208,14 +200,12 @@
  *     requestBody:
  *       required: true
  *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             $ref: '#/components/schemas/CheckEmailRequest'
  *         application/json:
  *           schema:
- *             type: object
- *             required: [email]
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
+ *             $ref: '#/components/schemas/CheckEmailRequest'
  *     responses:
  *       200:
  *         description: Email availability response
@@ -253,22 +243,12 @@
  *     requestBody:
  *       required: true
  *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             $ref: '#/components/schemas/AuthCompleteProfileRequest'
  *         application/json:
  *           schema:
- *             type: object
- *             required: [firstName, lastName, password]
- *             properties:
- *               userId:
- *                 type: string
- *                 description: Optional legacy field. If provided, it must match authenticated user id.
- *               firstName:
- *                 type: string
- *               lastName:
- *                 type: string
- *               password:
- *                 type: string
- *                 minLength: 8
- *                 description: Must contain at least one uppercase letter, one lowercase letter, and one special character.
+ *             $ref: '#/components/schemas/AuthCompleteProfileRequest'
  *     responses:
  *       200:
  *         description: Profile completed
@@ -365,22 +345,12 @@
  *     requestBody:
  *       required: true
  *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             $ref: '#/components/schemas/UserCompleteProfileRequest'
  *         application/json:
  *           schema:
- *             type: object
- *             required: [firstName, lastName, password, confirmPassword]
- *             properties:
- *               firstName:
- *                 type: string
- *               lastName:
- *                 type: string
- *               password:
- *                 type: string
- *                 minLength: 8
- *                 description: Must contain at least one uppercase letter, one lowercase letter, and one special character.
- *               confirmPassword:
- *                 type: string
- *                 minLength: 8
+ *             $ref: '#/components/schemas/UserCompleteProfileRequest'
  *     responses:
  *       200:
  *         description: Profile completed successfully
@@ -418,15 +388,12 @@
  *     requestBody:
  *       required: true
  *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             $ref: '#/components/schemas/WalletDepositRequest'
  *         application/json:
  *           schema:
- *             type: object
- *             required: [amount]
- *             properties:
- *               amount:
- *                 type: number
- *                 description: Deposit amount in AED.
- *                 example: 366
+ *             $ref: '#/components/schemas/WalletDepositRequest'
  *     responses:
  *       200:
  *         description: Checkout session created
@@ -471,14 +438,12 @@
  *     requestBody:
  *       required: true
  *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             $ref: '#/components/schemas/WalletVerifyRequest'
  *         application/json:
  *           schema:
- *             type: object
- *             required: [session_id]
- *             properties:
- *               session_id:
- *                 type: string
- *                 example: cs_test_123
+ *             $ref: '#/components/schemas/WalletVerifyRequest'
  *     responses:
  *       200:
  *         description: Verification result
@@ -514,6 +479,152 @@
 
 /**
  * @swagger
+ * /api/wallet/balance:
+ *   get:
+ *     tags: [Wallet]
+ *     summary: Get wallet balance and totals
+ *     responses:
+ *       200:
+ *         description: Wallet fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               wallet:
+ *                 id: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
+ *                 user_id: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
+ *                 balance: 1500
+ *                 currency: USD
+ *                 available_balance: 1500
+ *                 total_deposited: 2000
+ *                 total_withdrawn: 500
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @swagger
+ * /api/wallet/transactions:
+ *   get:
+ *     tags: [Wallet]
+ *     summary: Get paginated transaction history
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *     responses:
+ *       200:
+ *         description: Transaction history fetched
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @swagger
+ * /api/wallet/transactions/{id}:
+ *   get:
+ *     tags: [Wallet]
+ *     summary: Get single transaction by id
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Transaction fetched
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Transaction not found
+ */
+
+/**
+ * @swagger
+ * /api/kyc/upload:
+ *   post:
+ *     tags: [Kyc]
+ *     summary: Upload KYC document (front/passport)
+ *     description: Uses multipart form upload. This endpoint expects file field name `document`.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             $ref: '#/components/schemas/KycUploadRequest'
+ *     responses:
+ *       201:
+ *         description: KYC document uploaded
+ *       400:
+ *         description: Validation error (missing file or invalid document type)
+ *       401:
+ *         description: Unauthorized
+ *       429:
+ *         description: Too many upload attempts
+ */
+
+/**
+ * @swagger
+ * /api/kyc/upload/back:
+ *   post:
+ *     tags: [Kyc]
+ *     summary: Upload back side of national ID
+ *     description: Uses multipart form upload. This endpoint expects file field name `document`.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             $ref: '#/components/schemas/KycUploadBackRequest'
+ *     responses:
+ *       201:
+ *         description: Back document uploaded
+ *       400:
+ *         description: Validation error (missing file)
+ *       401:
+ *         description: Unauthorized
+ *       429:
+ *         description: Too many upload attempts
+ */
+
+/**
+ * @swagger
+ * /api/kyc/documents/completeness:
+ *   get:
+ *     tags: [Kyc]
+ *     summary: Check uploaded KYC document completeness
+ *     responses:
+ *       200:
+ *         description: Completeness fetched
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @swagger
+ * /api/kyc/country-codes:
+ *   get:
+ *     tags: [Kyc]
+ *     summary: Get phone country codes list
+ *     responses:
+ *       200:
+ *         description: Country codes fetched
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @swagger
  * components:
  *   schemas:
  *     RegisterRequest:
@@ -522,15 +633,39 @@
  *       properties:
  *         firstName:
  *           type: string
+ *           example: John
  *         lastName:
  *           type: string
+ *           example: Doe
  *         email:
  *           type: string
  *           format: email
+ *           example: user@example.com
  *         password:
  *           type: string
  *           minLength: 8
  *           description: Must contain at least one uppercase letter, one lowercase letter, and one special character.
+ *           example: Strong@123
+ *
+ *     VerifyOtpRequest:
+ *       type: object
+ *       required: [tempToken, otp]
+ *       properties:
+ *         tempToken:
+ *           type: string
+ *           example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+ *         otp:
+ *           type: string
+ *           pattern: '^\d{6}$'
+ *           example: "123456"
+ *
+ *     ResendOtpRequest:
+ *       type: object
+ *       required: [tempToken]
+ *       properties:
+ *         tempToken:
+ *           type: string
+ *           example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
  *
  *     LoginRequest:
  *       type: object
@@ -539,6 +674,97 @@
  *         email:
  *           type: string
  *           format: email
+ *           example: user@example.com
  *         password:
  *           type: string
+ *           example: Strong@123
+ *
+ *     CheckEmailRequest:
+ *       type: object
+ *       required: [email]
+ *       properties:
+ *         email:
+ *           type: string
+ *           format: email
+ *           example: user@example.com
+ *
+ *     AuthCompleteProfileRequest:
+ *       type: object
+ *       required: [firstName, lastName, password]
+ *       properties:
+ *         userId:
+ *           type: string
+ *           format: uuid
+ *           description: Optional. If provided, must match authenticated user.
+ *         firstName:
+ *           type: string
+ *           example: John
+ *         lastName:
+ *           type: string
+ *           example: Doe
+ *         password:
+ *           type: string
+ *           minLength: 8
+ *           example: Strong@123
+ *
+ *     UserCompleteProfileRequest:
+ *       type: object
+ *       required: [firstName, lastName, password, confirmPassword]
+ *       properties:
+ *         firstName:
+ *           type: string
+ *           example: John
+ *         lastName:
+ *           type: string
+ *           example: Doe
+ *         password:
+ *           type: string
+ *           minLength: 8
+ *           example: Strong@123
+ *         confirmPassword:
+ *           type: string
+ *           minLength: 8
+ *           example: Strong@123
+ *
+ *     WalletDepositRequest:
+ *       type: object
+ *       required: [amount]
+ *       properties:
+ *         amount:
+ *           type: number
+ *           format: float
+ *           minimum: 0.01
+ *           description: Deposit amount in AED.
+ *           example: 366
+ *
+ *     WalletVerifyRequest:
+ *       type: object
+ *       required: [session_id]
+ *       properties:
+ *         session_id:
+ *           type: string
+ *           description: Stripe checkout session id.
+ *           example: cs_test_123
+ *
+ *     KycUploadRequest:
+ *       type: object
+ *       required: [documentType, document]
+ *       properties:
+ *         documentType:
+ *           type: string
+ *           enum: [passport, national_id]
+ *           example: passport
+ *         document:
+ *           type: string
+ *           format: binary
+ *           description: Image or PDF file uploaded in multipart form-data.
+ *
+ *     KycUploadBackRequest:
+ *       type: object
+ *       required: [document]
+ *       properties:
+ *         document:
+ *           type: string
+ *           format: binary
+ *           description: Back-side image/PDF uploaded in multipart form-data.
  */
