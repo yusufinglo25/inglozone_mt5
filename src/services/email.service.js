@@ -2,21 +2,40 @@ const nodemailer = require('nodemailer')
 
 class EmailService {
   constructor() {
+    const host = process.env.SMTP_HOST || 'smtp.gmail.com'
+    const port = Number.parseInt(process.env.SMTP_PORT || '587', 10)
+    const secure = process.env.SMTP_SECURE === 'true' || port === 465
+    const user = process.env.SMTP_USER || process.env.EMAIL_USER
+    const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS
+    const rejectUnauthorized = process.env.SMTP_REJECT_UNAUTHORIZED !== 'false'
+
+    if (!user || !pass) {
+      this.transporter = null
+      this.sender = process.env.EMAIL_FROM || 'no-reply@inglozone.com'
+      return
+    }
+
     this.transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false,
+      host,
+      port,
+      secure,
       auth: {
-        user: 'yusuf.inglo@gmail.com',
-        pass: 'orqs qwkq kxzp ryjc'
+        user,
+        pass
       },
       tls: {
-        rejectUnauthorized: false
+        rejectUnauthorized
       }
     })
+
+    this.sender = process.env.EMAIL_FROM || `"Inglozone Security" <${user}>`
   }
 
   async sendOTPEmail(email, firstName, otpCode) {
+    if (!this.transporter) {
+      throw new Error('SMTP credentials are not configured')
+    }
+
     const htmlTemplate = `
       <!DOCTYPE html>
       <html>
@@ -223,7 +242,7 @@ class EmailService {
     `
 
     const mailOptions = {
-      from: '"Inglozone Security" <yusuf.inglo@gmail.com>',
+      from: this.sender,
       to: email,
       subject: 'Verify Your Inglozone Account - OTP Required',
       html: htmlTemplate,

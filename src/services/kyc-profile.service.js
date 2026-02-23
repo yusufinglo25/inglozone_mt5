@@ -1,7 +1,69 @@
 // src/services/kyc-profile.service.js
 const db = require('../config/db')
 const { v4: uuidv4 } = require('uuid')
-const { validatePhoneNumber, getCountryByCode } = require('../data/country-codes')
+const { validatePhoneNumber } = require('../data/country-codes')
+
+const USER_EDITABLE_PROFILE_FIELDS = new Set([
+  'date_of_birth',
+  'place_of_birth',
+  'gender',
+  'nationality',
+  'country_of_residence',
+  'address_line1',
+  'address_line2',
+  'city',
+  'state',
+  'postal_code',
+  'country',
+  'primary_phone_country_code',
+  'primary_phone_number',
+  'secondary_phone_country_code',
+  'secondary_phone_number',
+  'employment_status',
+  'occupation',
+  'employer_name',
+  'employer_address',
+  'employer_phone',
+  'years_in_employment',
+  'monthly_income',
+  'annual_income',
+  'income_currency',
+  'source_of_funds',
+  'other_source_of_funds',
+  'trading_experience_years',
+  'trading_experience_level',
+  'investment_knowledge',
+  'risk_tolerance',
+  'politically_exposed_person',
+  'pep_details',
+  'us_citizen_or_resident',
+  'tax_identification_number',
+  'social_security_number',
+  'account_purpose',
+  'other_account_purpose',
+  'estimated_annual_deposit',
+  'estimated_annual_withdrawal',
+  'proof_of_address_uploaded',
+  'proof_of_income_uploaded'
+])
+
+function sanitizeProfileData(profileData) {
+  const cleanedData = {}
+
+  for (const [key, value] of Object.entries(profileData || {})) {
+    if (!USER_EDITABLE_PROFILE_FIELDS.has(key)) {
+      continue
+    }
+
+    if (value === '' || value === null || value === undefined) {
+      continue
+    }
+
+    cleanedData[key] = value
+  }
+
+  return cleanedData
+}
 
 class KYCProfileService {
   // ENHANCED: Create or update KYC profile with phone country codes
@@ -18,19 +80,11 @@ class KYCProfileService {
         throw new Error('Profile already submitted and cannot be edited')
       }
 
-      // Remove empty strings and null values
-      const cleanedData = {}
-      for (const [key, value] of Object.entries(profileData)) {
-        if (value !== '' && value !== null && value !== undefined) {
-          cleanedData[key] = value
-        }
-      }
+      const cleanedData = sanitizeProfileData(profileData)
 
-      // Remove fields that don't exist in kyc_profiles table
-      delete cleanedData.first_name
-      delete cleanedData.last_name
-      delete cleanedData.email
-      delete cleanedData.password
+      if (Object.keys(cleanedData).length === 0) {
+        throw new Error('No valid profile fields provided')
+      }
 
       // Validate phone numbers if provided
       if (cleanedData.primary_phone_number && cleanedData.primary_phone_country_code) {

@@ -31,9 +31,7 @@ class KYCService {
   // Encrypt file using AES-256-GCM
   encryptFile(buffer) {
     const algorithm = 'aes-256-gcm'
-    const key = crypto.createHash('sha256')
-      .update(process.env.KYC_ENCRYPTION_KEY || 'your-secret-key-32-chars-long')
-      .digest()
+    const key = this.getEncryptionKey()
 
     const iv = crypto.randomBytes(16)
     const cipher = crypto.createCipheriv(algorithm, key, iv)
@@ -51,9 +49,7 @@ class KYCService {
   // Decrypt file
   decryptFile(encryptedBuffer, ivHex, authTagHex) {
     const algorithm = 'aes-256-gcm'
-    const key = crypto.createHash('sha256')
-      .update(process.env.KYC_ENCRYPTION_KEY || 'your-secret-key-32-chars-long')
-      .digest()
+    const key = this.getEncryptionKey()
 
     const iv = Buffer.from(ivHex, 'hex')
     const authTag = Buffer.from(authTagHex, 'hex')
@@ -69,6 +65,17 @@ class KYCService {
     const filePath = path.join(this.uploadPath, filename)
     await fs.writeFile(filePath, encryptedData.encrypted)
     return filePath
+  }
+
+  getEncryptionKey() {
+    const rawKey = process.env.KYC_ENCRYPTION_KEY
+    if (!rawKey) {
+      throw new Error('KYC_ENCRYPTION_KEY is not configured')
+    }
+
+    return crypto.createHash('sha256')
+      .update(rawKey)
+      .digest()
   }
 
   // ENHANCED: Create KYC document record with document side

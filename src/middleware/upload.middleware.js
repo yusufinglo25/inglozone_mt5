@@ -2,10 +2,15 @@
 const multer = require('multer')
 const { RateLimiterMemory } = require('rate-limiter-flexible')
 
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
 // Rate limiter for uploads (5 per hour per user)
 const uploadRateLimiter = new RateLimiterMemory({
-  points: 5,
-  duration: 60 * 60, // 1 hour
+  points: parsePositiveInt(process.env.KYC_MAX_UPLOADS_PER_HOUR, 5),
+  duration: parsePositiveInt(process.env.KYC_UPLOAD_RATE_LIMIT_WINDOW_SECONDS, 60 * 60), // 1 hour
 })
 
 // Configure multer for memory storage
@@ -35,11 +40,25 @@ const upload = multer({
   }
 })
 
-// Rate limiting middleware for uploads - MUST be a function
-const uploadRateLimit = (req, res, next) => {
-  // For now, skip rate limiting to get it working
-  // We'll implement proper rate limiting later
-  next()
+// Rate limiting middleware for uploads
+const uploadRateLimit = async (req, res, next) => {
+  const limiterKey = req.user?.id || req.ip
+
+  try {
+    await uploadRateLimiter.consume(limiterKey)
+    next()
+  } catch (rateError) {
+    if (rateError instanceof Error) {
+      return next(rateError)
+    }
+
+    const retryAfterSeconds = Math.ceil(rateError.msBeforeNext / 1000)
+    res.set('Retry-After', String(retryAfterSeconds))
+    return res.status(429).json({
+      error: 'Too many upload attempts. Please try again later.',
+      retryAfter: retryAfterSeconds
+    })
+  }
 }
 
 // Single file upload middleware - This returns a function

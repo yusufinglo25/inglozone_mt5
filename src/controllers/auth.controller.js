@@ -1,13 +1,35 @@
 const service = require('../services/auth.service')
 const { validatePasswordPolicy } = require('../utils/password-policy')
 
+const DEFAULT_ALLOWED_ORIGINS = [
+  'https://customer-panel-inglo.vercel.app',
+  'http://localhost:5173'
+]
+
+const getAllowedOrigins = () => {
+  if (!process.env.ALLOWED_ORIGINS) {
+    return DEFAULT_ALLOWED_ORIGINS
+  }
+
+  return process.env.ALLOWED_ORIGINS
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+}
+
 // Helper function to add CORS headers
 const addCorsHeaders = (res, req) => {
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || 'https://customer-panel-inglo.vercel.app');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Expose-Headers', 'Authorization');
-  return res;
-};
+  const allowedOrigins = getAllowedOrigins()
+  const requestOrigin = req.headers.origin
+
+  if (requestOrigin && allowedOrigins.includes(requestOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin)
+    res.setHeader('Access-Control-Allow-Credentials', 'true')
+  }
+
+  res.setHeader('Access-Control-Expose-Headers', 'Authorization')
+  return res
+}
 
 // OLD FUNCTIONS - KEEP AS IS (commented out since we're using OTP now)
 exports.register = async (req, res) => {
@@ -168,32 +190,40 @@ exports.checkEmail = async (req, res) => {
 exports.completeProfile = async (req, res) => {
   try {
     const { userId, firstName, lastName, password } = req.body
+    const authenticatedUserId = req.user?.id
     
-    if (!userId || !firstName || !lastName || !password) {
-      res = addCorsHeaders(res, req);
+    if (!authenticatedUserId || !firstName || !lastName || !password) {
+      res = addCorsHeaders(res, req)
       return res.status(400).json({ 
         error: 'All fields are required' 
+      })
+    }
+
+    if (userId && userId !== authenticatedUserId) {
+      res = addCorsHeaders(res, req)
+      return res.status(403).json({
+        error: 'Forbidden. You can only complete your own profile.'
       })
     }
     
     const passwordError = validatePasswordPolicy(password)
     if (passwordError) {
-      res = addCorsHeaders(res, req);
+      res = addCorsHeaders(res, req)
       return res.status(400).json({ 
         error: passwordError 
       })
     }
     
-    const result = await service.completeProfile(userId, {
+    const result = await service.completeProfile(authenticatedUserId, {
       firstName,
       lastName,
       password
     })
     
-    res = addCorsHeaders(res, req);
+    res = addCorsHeaders(res, req)
     res.status(200).json(result)
   } catch (error) {
-    res = addCorsHeaders(res, req);
+    res = addCorsHeaders(res, req)
     res.status(400).json({ error: error.message })
   }
 }
