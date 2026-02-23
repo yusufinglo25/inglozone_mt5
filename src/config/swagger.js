@@ -135,7 +135,9 @@ const MANUALLY_DOCUMENTED_OPERATIONS = new Set([
   'GET /api/auth/status',
   'GET /api/auth/google',
   'GET /api/auth/google/callback',
-  'POST /api/user/complete-profile'
+  'POST /api/user/complete-profile',
+  'POST /api/wallet/deposit',
+  'POST /api/wallet/deposit/verify'
 ])
 
 function buildAutoPathDocs() {

@@ -4,6 +4,7 @@
  *   - name: Health
  *   - name: Auth
  *   - name: User
+ *   - name: Wallet
  */
 
 /**
@@ -245,18 +246,21 @@
  * /api/auth/complete-profile:
  *   post:
  *     tags: [Auth]
- *     summary: Complete profile for OAuth signup
- *     security: []
+ *     summary: Complete profile for OAuth signup (authenticated)
+ *     description: Requires a valid JWT. Send token in Authorization Bearer header (recommended). Legacy clients may still pass token in body/query.
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [userId, firstName, lastName, password]
+ *             required: [firstName, lastName, password]
  *             properties:
  *               userId:
  *                 type: string
+ *                 description: Optional legacy field. If provided, it must match authenticated user id.
  *               firstName:
  *                 type: string
  *               lastName:
@@ -279,6 +283,18 @@
  *           application/json:
  *             example:
  *               error: All fields are required
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             example:
+ *               error: Access denied. No token provided.
+ *       403:
+ *         description: Forbidden
+ *         content:
+ *           application/json:
+ *             example:
+ *               error: Forbidden. You can only complete your own profile.
  */
 
 /**
@@ -287,6 +303,14 @@
  *   get:
  *     tags: [Auth]
  *     summary: Check authentication status with bearer token
+ *     description: Accepts Authorization Bearer token. Legacy support also allows token query param.
+ *     parameters:
+ *       - in: query
+ *         name: token
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Optional legacy JWT token.
  *     responses:
  *       200:
  *         description: Authenticated
@@ -325,6 +349,7 @@
  *   get:
  *     tags: [Auth]
  *     summary: Google OAuth callback
+ *     description: Redirects to frontend with token in URL hash by default (`#token=...`). If `LEGACY_QUERY_TOKEN_REDIRECT=true`, token is sent as query param for backward compatibility.
  *     security: []
  *     responses:
  *       302:
@@ -381,6 +406,110 @@
  *               invalidToken:
  *                 value:
  *                   error: Invalid token
+ */
+
+/**
+ * @swagger
+ * /api/wallet/deposit:
+ *   post:
+ *     tags: [Wallet]
+ *     summary: Create Stripe checkout session for wallet deposit
+ *     description: Amount is provided in AED and converted to USD internally. Non-approved KYC users are capped to a maximum wallet exposure of 5000 USD (current balance + pending deposits + new deposit). Fully approved KYC users have unlimited deposits.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [amount]
+ *             properties:
+ *               amount:
+ *                 type: number
+ *                 description: Deposit amount in AED.
+ *                 example: 366
+ *     responses:
+ *       200:
+ *         description: Checkout session created
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 sessionId: cs_test_123
+ *                 url: https://checkout.stripe.com/c/pay/cs_test_123
+ *                 amountUSD: 100
+ *                 amountAED: 366
+ *                 transactionId: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
+ *       400:
+ *         description: Validation or business-rule error
+ *         content:
+ *           application/json:
+ *             examples:
+ *               invalidAmount:
+ *                 value:
+ *                   success: false
+ *                   error: Valid amount is required
+ *               limitReached:
+ *                 value:
+ *                   success: false
+ *                   error: Deposit limit reached. Non-approved accounts can hold up to 5000.00 USD. Complete KYC approval for unlimited deposits.
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             example:
+ *               error: Access denied. No token provided.
+ */
+
+/**
+ * @swagger
+ * /api/wallet/deposit/verify:
+ *   post:
+ *     tags: [Wallet]
+ *     summary: Verify Stripe session and finalize wallet deposit
+ *     description: Final verification and wallet credit. The non-approved KYC deposit cap is re-validated at completion time to prevent bypass.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [session_id]
+ *             properties:
+ *               session_id:
+ *                 type: string
+ *                 example: cs_test_123
+ *     responses:
+ *       200:
+ *         description: Verification result
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 success: true
+ *                 message: Deposit completed successfully
+ *                 amount: 100
+ *                 currency: USD
+ *       400:
+ *         description: Verification or business-rule error
+ *         content:
+ *           application/json:
+ *             examples:
+ *               missingSession:
+ *                 value:
+ *                   success: false
+ *                   error: Session ID is required
+ *               limitReached:
+ *                 value:
+ *                   success: false
+ *                   error: Deposit limit reached. Non-approved accounts can hold up to 5000.00 USD. Complete KYC approval for unlimited deposits.
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             example:
+ *               error: Access denied. No token provided.
  */
 
 /**
