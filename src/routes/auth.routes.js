@@ -3,27 +3,6 @@ const router = express.Router()
 const controller = require('../controllers/auth.controller')
 const passport = require('passport')
 const jwt = require('jsonwebtoken')
-const auth = require('../middleware/auth.middleware')
-
-const buildRedirectUrl = (frontendUrl, path, queryParams, token) => {
-  const searchParams = new URLSearchParams()
-  Object.entries(queryParams || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
-      searchParams.set(key, value)
-    }
-  })
-
-  const queryString = searchParams.toString()
-  const baseUrl = `${frontendUrl}${path}${queryString ? `?${queryString}` : ''}`
-  const useLegacyQueryToken = process.env.LEGACY_QUERY_TOKEN_REDIRECT === 'true'
-
-  if (useLegacyQueryToken) {
-    const joiner = queryString ? '&' : '?'
-    return `${baseUrl}${joiner}token=${encodeURIComponent(token)}`
-  }
-
-  return `${baseUrl}#token=${encodeURIComponent(token)}`
-}
 
 // OLD ROUTES (if you want to keep direct registration)
 router.post('/register', controller.register) // Direct registration (optional)
@@ -38,7 +17,7 @@ router.post('/login', controller.login)
 
 // GOOGLE OAUTH ROUTES
 router.post('/check-email', controller.checkEmail)
-router.post('/complete-profile', auth.verifyTokenFlexible, controller.completeProfile)
+router.post('/complete-profile', controller.completeProfile)
 
 router.get('/google',
   passport.authenticate('google', { scope: ['profile', 'email'] })
@@ -65,21 +44,11 @@ router.get('/google/callback',
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
       
       if (!req.user.password_set) {
-        const redirectUrl = buildRedirectUrl(
-          frontendUrl,
-          '/complete-profile',
-          {
-            userId: req.user.id,
-            email: req.user.email,
-            firstName: req.user.first_name || '',
-            lastName: req.user.last_name || ''
-          },
-          token
-        )
+        const redirectUrl = `${frontendUrl}/complete-profile?token=${token}&userId=${req.user.id}&email=${encodeURIComponent(req.user.email)}&firstName=${encodeURIComponent(req.user.first_name || '')}&lastName=${encodeURIComponent(req.user.last_name || '')}`
         return res.redirect(redirectUrl)
       }
       
-      res.redirect(buildRedirectUrl(frontendUrl, '/dashboard', {}, token))
+      res.redirect(`${frontendUrl}/dashboard?token=${token}`)
       
     } catch (error) {
       console.error('Google callback error:', error)
@@ -91,7 +60,7 @@ router.get('/google/callback',
 
 // Optional: Add a route to check auth status
 router.get('/status', (req, res) => {
-  const token = auth.extractToken(req, { allowQueryToken: true })
+  const token = req.headers.authorization?.split(' ')[1]
   
   if (!token) {
     return res.status(401).json({ authenticated: false })

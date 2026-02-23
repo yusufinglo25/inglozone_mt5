@@ -46,7 +46,6 @@ exports.createDeposit = async (req, res) => {
 exports.verifyDeposit = async (req, res) => {
   try {
     const { session_id } = req.body
-    const userId = req.user.id
     
     if (!session_id) {
       return res.status(400).json({
@@ -55,7 +54,7 @@ exports.verifyDeposit = async (req, res) => {
       })
     }
 
-    const result = await walletService.verifyDeposit(session_id, userId)
+    const result = await walletService.verifyDeposit(session_id)
     
     res.json({
       success: true,

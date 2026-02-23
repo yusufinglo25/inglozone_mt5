@@ -3,107 +3,6 @@ const { v4: uuidv4 } = require('uuid')
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
 
 class WalletService {
-  getNonApprovedDepositLimitUSD() {
-    const value = Number.parseFloat(process.env.NON_APPROVED_DEPOSIT_LIMIT_USD || '5000')
-    return Number.isFinite(value) && value > 0 ? value : 5000
-  }
-
-  async isKYCApproved(userId) {
-    const [profiles] = await db.promise().query(
-      `SELECT profile_status FROM kyc_profiles WHERE user_id = ? LIMIT 1`,
-      [userId]
-    )
-
-    const isProfileApproved = profiles.length > 0 && profiles[0].profile_status === 'APPROVED'
-    if (!isProfileApproved) {
-      return false
-    }
-
-    const [documents] = await db.promise().query(
-      `SELECT document_type, status FROM kyc_documents WHERE user_id = ?`,
-      [userId]
-    )
-
-    const approvedDocs = documents.filter((doc) => doc.status === 'APPROVED')
-    const hasApprovedPassport = approvedDocs.some((doc) => doc.document_type === 'passport')
-    const hasApprovedLegacyNationalId = approvedDocs.some((doc) => doc.document_type === 'national_id')
-    const hasApprovedNationalIdFront = approvedDocs.some((doc) => doc.document_type === 'national_id_front')
-    const hasApprovedNationalIdBack = approvedDocs.some((doc) => doc.document_type === 'national_id_back')
-
-    const isDocumentApproved =
-      hasApprovedPassport ||
-      hasApprovedLegacyNationalId ||
-      (hasApprovedNationalIdFront && hasApprovedNationalIdBack)
-
-    return isDocumentApproved
-  }
-
-  async getPendingDepositTotal(userId) {
-    const [rows] = await db.promise().query(
-      `SELECT COALESCE(SUM(amount), 0) as total
-       FROM transactions
-       WHERE user_id = ? AND type = 'deposit' AND status = 'pending'`,
-      [userId]
-    )
-
-    return parseFloat(rows[0]?.total || 0)
-  }
-
-  async enforceDepositLimit(userId, amountUSD, walletBalance) {
-    const isApproved = await this.isKYCApproved(userId)
-    if (isApproved) {
-      return
-    }
-
-    const limitUSD = this.getNonApprovedDepositLimitUSD()
-    const pendingDeposits = await this.getPendingDepositTotal(userId)
-    const currentBalance = parseFloat(walletBalance || 0)
-    const projectedBalance = currentBalance + pendingDeposits + amountUSD
-
-    if (projectedBalance > limitUSD) {
-      const remaining = Math.max(0, limitUSD - (currentBalance + pendingDeposits))
-      throw new Error(
-        `Deposit limit reached. Non-approved accounts can hold up to ${limitUSD.toFixed(2)} USD. Remaining allowed amount: ${remaining.toFixed(2)} USD. Complete KYC approval for unlimited deposits.`
-      )
-    }
-  }
-
-  async validateDepositCompletionLimit(connection, userId, amountUSD) {
-    const isApproved = await this.isKYCApproved(userId)
-    if (isApproved) {
-      return { allowed: true }
-    }
-
-    const [walletRows] = await connection.query(
-      `SELECT balance FROM wallets WHERE user_id = ? FOR UPDATE`,
-      [userId]
-    )
-
-    if (walletRows.length === 0) {
-      return { allowed: false, message: 'Wallet not found' }
-    }
-
-    const limitUSD = this.getNonApprovedDepositLimitUSD()
-    const currentBalance = parseFloat(walletRows[0].balance || 0)
-    const projectedBalance = currentBalance + parseFloat(amountUSD || 0)
-
-    if (projectedBalance > limitUSD) {
-      return {
-        allowed: false,
-        message: `Deposit limit reached. Non-approved accounts can hold up to ${limitUSD.toFixed(2)} USD. Complete KYC approval for unlimited deposits.`
-      }
-    }
-
-    return { allowed: true }
-  }
-
-  async assertWithdrawalAllowed(userId) {
-    const isApproved = await this.isKYCApproved(userId)
-    if (!isApproved) {
-      throw new Error('Withdrawals are disabled until KYC is fully approved.')
-    }
-  }
-
   // Get user wallet balance
   async getWallet(userId) {
     return new Promise((resolve, reject) => {
@@ -163,9 +62,6 @@ class WalletService {
 
   // Create deposit intent (Stripe)
   async createDepositIntent(userId, amountAED) {
-    let transactionId = null
-    let stripeSessionCreated = false
-
     try {
       // Convert AED to USD (1 USD = 3.66 AED)
       const amountUSD = parseFloat((amountAED / 3.66).toFixed(2))
@@ -186,12 +82,9 @@ class WalletService {
         )
       })
 
-      // Check KYC-based deposit cap before creating payment intent
-      const wallet = await this.getWallet(userId)
-      await this.enforceDepositLimit(userId, amountUSD, wallet.balance)
-
       // Create transaction record
-      transactionId = uuidv4()
+      const transactionId = uuidv4()
+      const wallet = await this.getWallet(userId)
       
       await new Promise((resolve, reject) => {
         db.query(
@@ -230,7 +123,6 @@ class WalletService {
           amountUSD: amountUSD.toString()
         }
       })
-      stripeSessionCreated = true
 
       // Update transaction with Stripe session ID
       await new Promise((resolve, reject) => {
@@ -253,134 +145,93 @@ class WalletService {
       }
 
     } catch (error) {
-      if (transactionId && !stripeSessionCreated) {
-        try {
-          await db.promise().query(
-            `UPDATE transactions SET status = 'failed', updated_at = NOW() WHERE id = ? AND status = 'pending'`,
-            [transactionId]
-          )
-        } catch (cleanupError) {
-          console.error('Failed to mark pending transaction as failed:', cleanupError)
-        }
-      }
       throw error
     }
   }
 
   // Verify and complete deposit
-  async verifyDeposit(sessionId, userId = null) {
-    let connection
-
+  async verifyDeposit(sessionId) {
     try {
+      // Retrieve session from Stripe
       const session = await stripe.checkout.sessions.retrieve(sessionId, {
         expand: ['payment_intent']
       })
 
-      connection = await db.promise().getConnection()
-      await connection.beginTransaction()
-
-      const transactionQuery = userId
-        ? `SELECT * FROM transactions WHERE stripe_session_id = ? AND user_id = ? FOR UPDATE`
-        : `SELECT * FROM transactions WHERE stripe_session_id = ? FOR UPDATE`
-      const transactionParams = userId ? [sessionId, userId] : [sessionId]
-
-      const [transactions] = await connection.query(transactionQuery, transactionParams)
-      if (transactions.length === 0) {
-        throw new Error('Transaction not found')
-      }
-
-      const transaction = transactions[0]
+      // Find transaction
+      const transaction = await new Promise((resolve, reject) => {
+        db.query(
+          `SELECT * FROM transactions WHERE stripe_session_id = ?`,
+          [sessionId],
+          (err, results) => {
+            if (err || results.length === 0) return reject(new Error('Transaction not found'))
+            resolve(results[0])
+          }
+        )
+      })
 
       if (transaction.status === 'completed') {
-        await connection.commit()
         return { success: true, message: 'Deposit already processed' }
       }
 
-      if (transaction.status !== 'pending') {
-        await connection.commit()
-        return {
-          success: false,
-          message: `Deposit cannot be processed from status: ${transaction.status}`
-        }
-      }
-
+      // Check if payment was successful
       if (session.payment_status === 'paid') {
-        const limitValidation = await this.validateDepositCompletionLimit(
-          connection,
-          transaction.user_id,
-          transaction.amount
-        )
-
-        if (!limitValidation.allowed) {
-          await connection.query(
-            `UPDATE transactions SET status = 'failed', updated_at = NOW() WHERE id = ? AND status = 'pending'`,
-            [transaction.id]
+        // Update transaction status
+        await new Promise((resolve, reject) => {
+          db.query(
+            `UPDATE transactions 
+             SET status = 'completed', 
+                 stripe_payment_id = ?,
+                 updated_at = NOW()
+             WHERE id = ?`,
+            [session.payment_intent.id, transaction.id],
+            (err) => {
+              if (err) return reject(err)
+              resolve()
+            }
           )
-          await connection.commit()
-          return {
-            success: false,
-            message: limitValidation.message
-          }
-        }
+        })
 
-        const paymentIntentId = typeof session.payment_intent === 'string'
-          ? session.payment_intent
-          : session.payment_intent?.id
+        // Update wallet balance
+        await new Promise((resolve, reject) => {
+          db.query(
+            `UPDATE wallets 
+             SET balance = balance + ?, 
+                 updated_at = NOW()
+             WHERE user_id = ?`,
+            [transaction.amount, transaction.user_id],
+            (err) => {
+              if (err) return reject(err)
+              resolve()
+            }
+          )
+        })
 
-        const [transactionUpdate] = await connection.query(
-          `UPDATE transactions
-           SET status = 'completed',
-               stripe_payment_id = ?,
-               updated_at = NOW()
-           WHERE id = ? AND status = 'pending'`,
-          [paymentIntentId, transaction.id]
-        )
-
-        if (transactionUpdate.affectedRows === 0) {
-          await connection.commit()
-          return { success: true, message: 'Deposit already processed' }
-        }
-
-        const [walletUpdate] = await connection.query(
-          `UPDATE wallets
-           SET balance = balance + ?,
-               updated_at = NOW()
-           WHERE user_id = ?`,
-          [transaction.amount, transaction.user_id]
-        )
-
-        if (walletUpdate.affectedRows === 0) {
-          throw new Error('Wallet not found')
-        }
-
-        await connection.commit()
         return {
           success: true,
           message: 'Deposit completed successfully',
           amount: transaction.amount,
           currency: transaction.currency
         }
-      }
+      } else {
+        // Payment failed
+        await new Promise((resolve, reject) => {
+          db.query(
+            `UPDATE transactions SET status = 'failed', updated_at = NOW() WHERE id = ?`,
+            [transaction.id],
+            (err) => {
+              if (err) return reject(err)
+              resolve()
+            }
+          )
+        })
 
-      await connection.query(
-        `UPDATE transactions SET status = 'failed', updated_at = NOW() WHERE id = ? AND status = 'pending'`,
-        [transaction.id]
-      )
-
-      await connection.commit()
-      return {
-        success: false,
-        message: 'Payment failed or not completed'
+        return {
+          success: false,
+          message: 'Payment failed or not completed'
+        }
       }
     } catch (error) {
-      if (connection) {
-        await connection.rollback()
-      }
       throw error
-    } finally {
-      if (connection) {
-        connection.release()
-      }
     }
   }
 

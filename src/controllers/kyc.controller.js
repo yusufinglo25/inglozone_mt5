@@ -1,6 +1,5 @@
 // src/controllers/kyc.controller.js
 const kycService = require('../services/kyc.service')
-const { isAdminEmail } = require('../utils/admin-auth')
 
 class KYCController {
   // Upload KYC document
@@ -269,7 +268,7 @@ async getCountryCodes(req, res) {
       
       // Don't include sensitive data for non-admin users unless it's their own
       const userEmail = req.user.email || ''
-      const isAdmin = isAdminEmail(userEmail)
+      const isAdmin = userEmail.includes('admin') || userEmail === process.env.ADMIN_EMAIL
       const isOwner = document.user_id === req.user.id
       
       if (!isAdmin && !isOwner) {

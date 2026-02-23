@@ -1,6 +1,5 @@
 // src/middleware/kyc.middleware.js
 const db = require('../config/db')
-const { isAdminEmail } = require('../utils/admin-auth')
 
 // Check if user has already uploaded KYC
 const checkExistingKYC = async (req, res, next) => {
@@ -64,8 +63,10 @@ const hasApprovedKYC = async (req, res, next) => {
 // Admin middleware (check if user is admin)
 const isAdmin = async (req, res, next) => {
   try {
+    // For now, check if user email contains "admin"
+    // You should implement proper admin role checking
     const userEmail = req.user.email || ''
-    const isAdminUser = isAdminEmail(userEmail)
+    const isAdminUser = userEmail.includes('admin') || userEmail === process.env.ADMIN_EMAIL
     
     if (!isAdminUser) {
       return res.status(403).json({
@@ -89,7 +90,7 @@ const checkKYCOwnershipOrAdmin = async (req, res, next) => {
     const { kycId } = req.params
     const userId = req.user.id
     const userEmail = req.user.email || ''
-    const isAdminUser = isAdminEmail(userEmail)
+    const isAdminUser = userEmail.includes('admin') || userEmail === process.env.ADMIN_EMAIL
     
     const [kycDoc] = await db.promise().query(
       `SELECT user_id FROM kyc_documents WHERE id = ?`,
