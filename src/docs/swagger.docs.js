@@ -6,6 +6,261 @@
  *   - name: User
  *   - name: Wallet
  *   - name: Kyc
+ *   - name: Admin
+ */
+
+/**
+ * @swagger
+ * /api/admin/auth/login:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Admin login via Zoho OAuth authorization code
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code:
+ *                 type: string
+ *               redirectUri:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Admin login successful
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               message: Admin login successful
+ *               token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+ *               admin:
+ *                 id: e8f7d0f9-254c-4f1a-bf75-a7f7524fdbaf
+ *                 email: admin@example.com
+ *                 fullName: Admin User
+ *                 department: Compliance
+ *                 role: superadmin
+ *       401:
+ *         description: Invalid admin credentials
+ */
+
+/**
+ * @swagger
+ * /api/admin/auth/logout:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Admin logout and revoke current session token
+ *     responses:
+ *       200:
+ *         description: Logout successful
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               message: Admin logout successful
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @swagger
+ * /api/admin/users:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Get all admin-manageable users (Zoho employees + local role/access)
+ *     responses:
+ *       200:
+ *         description: User list fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 - fullName: Yusuf Mohamed
+ *                   email: yusuf@example.com
+ *                   department: Compliance
+ *                   status: Active
+ *                   role: superadmin
+ *                   loginAccessStatus: allowed
+ *                   zohoUserId: "1234567890"
+ */
+
+/**
+ * @swagger
+ * /api/admin/users/role:
+ *   patch:
+ *     tags: [Admin]
+ *     summary: Update user role (superadmin only)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *               zohoUserId:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum: [superadmin, admin, accounts]
+ *             required: [role]
+ *     responses:
+ *       200:
+ *         description: Role updated
+ *       403:
+ *         description: Forbidden for non-superadmin
+ */
+
+/**
+ * @swagger
+ * /api/admin/users/allow-login:
+ *   patch:
+ *     tags: [Admin]
+ *     summary: Allow user login access (superadmin only)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *               zohoUserId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login access allowed
+ */
+
+/**
+ * @swagger
+ * /api/admin/users/block-login:
+ *   patch:
+ *     tags: [Admin]
+ *     summary: Block user login access (superadmin only)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *               zohoUserId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login access blocked
+ */
+
+/**
+ * @swagger
+ * /api/admin/kyc:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Get all KYC records for admin compliance review
+ *     responses:
+ *       200:
+ *         description: KYC records fetched
+ */
+
+/**
+ * @swagger
+ * /api/admin/kyc/{userId}:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Get single customer full KYC details
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Customer KYC details fetched
+ *       404:
+ *         description: Not found
+ */
+
+/**
+ * @swagger
+ * /api/admin/kyc/{userId}/approve:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Approve customer KYC
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               comment:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: KYC approved
+ */
+
+/**
+ * @swagger
+ * /api/admin/kyc/{userId}/reject:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Reject customer KYC
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [comment]
+ *             properties:
+ *               comment:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: KYC rejected
+ */
+
+/**
+ * @swagger
+ * /api/admin/dashboard/stats:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Get admin dashboard statistics
+ *     responses:
+ *       200:
+ *         description: Dashboard stats fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 totalCustomers: 150
+ *                 totalApprovedKYC: 95
+ *                 totalPendingKYC: 35
+ *                 totalHighRiskCustomers: 7
  */
 
 /**

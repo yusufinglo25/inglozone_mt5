@@ -144,7 +144,18 @@ const MANUALLY_DOCUMENTED_OPERATIONS = new Set([
   'POST /api/kyc/upload',
   'POST /api/kyc/upload/back',
   'GET /api/kyc/documents/completeness',
-  'GET /api/kyc/country-codes'
+  'GET /api/kyc/country-codes',
+  'POST /api/admin/auth/login',
+  'POST /api/admin/auth/logout',
+  'GET /api/admin/users',
+  'PATCH /api/admin/users/role',
+  'PATCH /api/admin/users/allow-login',
+  'PATCH /api/admin/users/block-login',
+  'GET /api/admin/kyc',
+  'GET /api/admin/kyc/{userId}',
+  'POST /api/admin/kyc/{userId}/approve',
+  'POST /api/admin/kyc/{userId}/reject',
+  'GET /api/admin/dashboard/stats'
 ])
 
 function buildAutoPathDocs() {
