@@ -36,7 +36,11 @@ app.get('/api-documentation.html', (req, res) => {
 
 // 1. Global CORS headers middleware
 app.use((req, res, next) => {
-  const allowedOrigins = ['https://customer-panel-inglo.vercel.app', 'http://localhost:5173']
+  const allowedOrigins = [
+    'https://customer-panel-inglo.vercel.app',
+    'https://inglo-zone-admin-panel.vercel.app',
+    'http://localhost:5173'
+  ]
   const origin = req.headers.origin
   
   if (allowedOrigins.includes(origin)) {
@@ -57,7 +61,11 @@ app.use((req, res, next) => {
 
 // 2. CORS middleware
 app.use(cors({
-  origin: ['https://customer-panel-inglo.vercel.app', 'http://localhost:5173'],
+  origin: [
+    'https://customer-panel-inglo.vercel.app',
+    'https://inglo-zone-admin-panel.vercel.app',
+    'http://localhost:5173'
+  ],
   credentials: true
 }))
 
@@ -114,7 +122,11 @@ app.use((err, req, res, next) => {
   console.error('Server Error:', err.message)
   
   // Add CORS headers to error responses too
-  const allowedOrigins = ['https://customer-panel-inglo.vercel.app', 'http://localhost:5173']
+  const allowedOrigins = [
+    'https://customer-panel-inglo.vercel.app',
+    'https://inglo-zone-admin-panel.vercel.app',
+    'http://localhost:5173'
+  ]
   const origin = req.headers.origin
   
   if (allowedOrigins.includes(origin)) {
@@ -130,7 +142,11 @@ app.use((err, req, res, next) => {
 
 // 404 handler with CORS headers
 app.use((req, res) => {
-  const allowedOrigins = ['https://customer-panel-inglo.vercel.app', 'http://localhost:5173']
+  const allowedOrigins = [
+    'https://customer-panel-inglo.vercel.app',
+    'https://inglo-zone-admin-panel.vercel.app',
+    'http://localhost:5173'
+  ]
   const origin = req.headers.origin
   
   if (allowedOrigins.includes(origin)) {
