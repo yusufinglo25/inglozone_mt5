@@ -2,19 +2,24 @@
  * @swagger
  * tags:
  *   - name: Health
- *   - name: Auth
- *   - name: User
- *   - name: Wallet
- *   - name: Kyc
+ *   - name: Customer
+ *   - name: Customer - Auth
+ *   - name: Customer - User
+ *   - name: Customer - Wallet
+ *   - name: Customer - KYC
+ *   - name: Customer - Settings
  *   - name: Admin
- *   - name: Settings
+ *   - name: Admin - Auth
+ *   - name: Admin - Users
+ *   - name: Admin - Compliance
+ *   - name: Admin - Dashboard
  */
 
 /**
  * @swagger
  * /api/settings/email-change/request-old-otp:
  *   post:
- *     tags: [Settings]
+ *     tags: [Customer - Settings]
  *     summary: Send OTP to current email for email-change verification
  *     responses:
  *       200:
@@ -25,7 +30,7 @@
  * @swagger
  * /api/settings/email-change/verify-old-otp:
  *   post:
- *     tags: [Settings]
+ *     tags: [Customer - Settings]
  *     summary: Verify OTP sent to current email
  *     requestBody:
  *       required: true
@@ -48,7 +53,7 @@
  * @swagger
  * /api/settings/email-change/request-new-otp:
  *   post:
- *     tags: [Settings]
+ *     tags: [Customer - Settings]
  *     summary: Send OTP to new email
  *     requestBody:
  *       required: true
@@ -71,7 +76,7 @@
  * @swagger
  * /api/settings/email-change/verify-new-otp:
  *   post:
- *     tags: [Settings]
+ *     tags: [Customer - Settings]
  *     summary: Verify OTP sent to new email and update account email
  *     requestBody:
  *       required: true
@@ -94,7 +99,7 @@
  * @swagger
  * /api/settings/password/change:
  *   post:
- *     tags: [Settings]
+ *     tags: [Customer - Settings]
  *     summary: Change current user password
  *     requestBody:
  *       required: true
@@ -119,7 +124,7 @@
  * @swagger
  * /api/settings/2fa/generate:
  *   post:
- *     tags: [Settings]
+ *     tags: [Customer - Settings]
  *     summary: Generate Google Authenticator QR for 2FA setup
  *     responses:
  *       200:
@@ -130,7 +135,7 @@
  * @swagger
  * /api/settings/2fa/verify:
  *   post:
- *     tags: [Settings]
+ *     tags: [Customer - Settings]
  *     summary: Verify 2FA code and enable 2FA
  *     requestBody:
  *       required: true
@@ -151,7 +156,7 @@
  * @swagger
  * /api/settings/2fa/disable:
  *   post:
- *     tags: [Settings]
+ *     tags: [Customer - Settings]
  *     summary: Disable 2FA for current user
  *     requestBody:
  *       required: true
@@ -172,7 +177,7 @@
  * @swagger
  * /api/settings/logout-all:
  *   post:
- *     tags: [Settings]
+ *     tags: [Customer - Settings]
  *     summary: Logout from all devices
  *     responses:
  *       200:
@@ -183,7 +188,7 @@
  * @swagger
  * /api/settings/logout-others:
  *   post:
- *     tags: [Settings]
+ *     tags: [Customer - Settings]
  *     summary: Logout from all devices except current
  *     responses:
  *       200:
@@ -194,7 +199,7 @@
  * @swagger
  * /api/admin/auth/login:
  *   post:
- *     tags: [Admin]
+ *     tags: [Admin - Auth]
  *     summary: Admin login via Zoho OAuth authorization code
  *     security: []
  *     requestBody:
@@ -232,7 +237,7 @@
  * @swagger
  * /api/admin/auth/logout:
  *   post:
- *     tags: [Admin]
+ *     tags: [Admin - Auth]
  *     summary: Admin logout and revoke current session token
  *     responses:
  *       200:
@@ -250,7 +255,7 @@
  * @swagger
  * /api/admin/users:
  *   get:
- *     tags: [Admin]
+ *     tags: [Admin - Users]
  *     summary: Get all admin-manageable users (Zoho employees + local role/access)
  *     responses:
  *       200:
@@ -273,7 +278,7 @@
  * @swagger
  * /api/admin/users/role:
  *   patch:
- *     tags: [Admin]
+ *     tags: [Admin - Users]
  *     summary: Update user role (superadmin only)
  *     requestBody:
  *       required: true
@@ -301,7 +306,7 @@
  * @swagger
  * /api/admin/users/allow-login:
  *   patch:
- *     tags: [Admin]
+ *     tags: [Admin - Users]
  *     summary: Allow user login access (superadmin only)
  *     requestBody:
  *       required: true
@@ -323,7 +328,7 @@
  * @swagger
  * /api/admin/users/block-login:
  *   patch:
- *     tags: [Admin]
+ *     tags: [Admin - Users]
  *     summary: Block user login access (superadmin only)
  *     requestBody:
  *       required: true
@@ -345,7 +350,7 @@
  * @swagger
  * /api/admin/kyc:
  *   get:
- *     tags: [Admin]
+ *     tags: [Admin - Compliance]
  *     summary: Get all KYC records for admin compliance review
  *     responses:
  *       200:
@@ -356,7 +361,7 @@
  * @swagger
  * /api/admin/kyc/{userId}:
  *   get:
- *     tags: [Admin]
+ *     tags: [Admin - Compliance]
  *     summary: Get single customer full KYC details
  *     parameters:
  *       - in: path
@@ -375,7 +380,7 @@
  * @swagger
  * /api/admin/kyc/{userId}/approve:
  *   post:
- *     tags: [Admin]
+ *     tags: [Admin - Compliance]
  *     summary: Approve customer KYC
  *     parameters:
  *       - in: path
@@ -401,7 +406,7 @@
  * @swagger
  * /api/admin/kyc/{userId}/reject:
  *   post:
- *     tags: [Admin]
+ *     tags: [Admin - Compliance]
  *     summary: Reject customer KYC
  *     parameters:
  *       - in: path
@@ -428,7 +433,7 @@
  * @swagger
  * /api/admin/dashboard/stats:
  *   get:
- *     tags: [Admin]
+ *     tags: [Admin - Dashboard]
  *     summary: Get admin dashboard statistics
  *     responses:
  *       200:
@@ -448,7 +453,7 @@
  * @swagger
  * /api/auth/register:
  *   post:
- *     tags: [Auth]
+ *     tags: [Customer - Auth]
  *     summary: Register user directly
  *     security: []
  *     requestBody:
@@ -481,7 +486,7 @@
  * @swagger
  * /api/auth/register-with-otp:
  *   post:
- *     tags: [Auth]
+ *     tags: [Customer - Auth]
  *     summary: Start registration and send OTP
  *     security: []
  *     requestBody:
@@ -516,7 +521,7 @@
  * @swagger
  * /api/auth/verify-otp:
  *   post:
- *     tags: [Auth]
+ *     tags: [Customer - Auth]
  *     summary: Verify OTP and create account
  *     security: []
  *     requestBody:
@@ -557,7 +562,7 @@
  * @swagger
  * /api/auth/resend-otp:
  *   post:
- *     tags: [Auth]
+ *     tags: [Customer - Auth]
  *     summary: Resend registration OTP
  *     security: []
  *     requestBody:
@@ -591,7 +596,7 @@
  * @swagger
  * /api/auth/login:
  *   post:
- *     tags: [Auth]
+ *     tags: [Customer - Auth]
  *     summary: Log in user and receive JWT token
  *     security: []
  *     requestBody:
@@ -630,7 +635,7 @@
  * @swagger
  * /api/auth/check-email:
  *   post:
- *     tags: [Auth]
+ *     tags: [Customer - Auth]
  *     summary: Check whether email already exists
  *     security: []
  *     requestBody:
@@ -671,7 +676,7 @@
  * @swagger
  * /api/auth/complete-profile:
  *   post:
- *     tags: [Auth]
+ *     tags: [Customer - Auth]
  *     summary: Complete profile for OAuth signup (authenticated)
  *     description: Requires a valid JWT. Send token in Authorization Bearer header (recommended). Legacy clients may still pass token in body/query.
  *     security:
@@ -717,7 +722,7 @@
  * @swagger
  * /api/auth/status:
  *   get:
- *     tags: [Auth]
+ *     tags: [Customer - Auth]
  *     summary: Check authentication status with bearer token
  *     description: Accepts Authorization Bearer token. Legacy support also allows token query param.
  *     parameters:
@@ -751,7 +756,7 @@
  * @swagger
  * /api/auth/google:
  *   get:
- *     tags: [Auth]
+ *     tags: [Customer - Auth]
  *     summary: Start Google OAuth flow
  *     security: []
  *     responses:
@@ -763,7 +768,7 @@
  * @swagger
  * /api/auth/google/callback:
  *   get:
- *     tags: [Auth]
+ *     tags: [Customer - Auth]
  *     summary: Google OAuth callback
  *     description: Redirects to frontend with token in URL hash by default (`#token=...`). If `LEGACY_QUERY_TOKEN_REDIRECT=true`, token is sent as query param for backward compatibility.
  *     security: []
@@ -776,7 +781,7 @@
  * @swagger
  * /api/user/complete-profile:
  *   post:
- *     tags: [User]
+ *     tags: [Customer - User]
  *     summary: Complete user profile using authenticated token
  *     requestBody:
  *       required: true
@@ -818,7 +823,7 @@
  * @swagger
  * /api/wallet/deposit:
  *   post:
- *     tags: [Wallet]
+ *     tags: [Customer - Wallet]
  *     summary: Create Stripe checkout session for wallet deposit
  *     description: Amount is provided in AED and converted to USD internally. Non-approved KYC users are capped to a maximum wallet exposure of 5000 USD (current balance + pending deposits + new deposit). Fully approved KYC users have unlimited deposits.
  *     requestBody:
@@ -868,7 +873,7 @@
  * @swagger
  * /api/wallet/deposit/verify:
  *   post:
- *     tags: [Wallet]
+ *     tags: [Customer - Wallet]
  *     summary: Verify Stripe session and finalize wallet deposit
  *     description: Final verification and wallet credit. The non-approved KYC deposit cap is re-validated at completion time to prevent bypass.
  *     requestBody:
@@ -917,7 +922,7 @@
  * @swagger
  * /api/wallet/balance:
  *   get:
- *     tags: [Wallet]
+ *     tags: [Customer - Wallet]
  *     summary: Get wallet balance and totals
  *     responses:
  *       200:
@@ -942,7 +947,7 @@
  * @swagger
  * /api/wallet/transactions:
  *   get:
- *     tags: [Wallet]
+ *     tags: [Customer - Wallet]
  *     summary: Get paginated transaction history
  *     parameters:
  *       - in: query
@@ -968,7 +973,7 @@
  * @swagger
  * /api/wallet/transactions/{id}:
  *   get:
- *     tags: [Wallet]
+ *     tags: [Customer - Wallet]
  *     summary: Get single transaction by id
  *     parameters:
  *       - in: path
@@ -989,7 +994,7 @@
  * @swagger
  * /api/kyc/upload:
  *   post:
- *     tags: [Kyc]
+ *     tags: [Customer - KYC]
  *     summary: Upload KYC document (front/passport)
  *     description: Uses multipart form upload. This endpoint expects file field name `document`.
  *     requestBody:
@@ -1013,7 +1018,7 @@
  * @swagger
  * /api/kyc/upload/back:
  *   post:
- *     tags: [Kyc]
+ *     tags: [Customer - KYC]
  *     summary: Upload back side of national ID
  *     description: Uses multipart form upload. This endpoint expects file field name `document`.
  *     requestBody:
@@ -1037,7 +1042,7 @@
  * @swagger
  * /api/kyc/documents/completeness:
  *   get:
- *     tags: [Kyc]
+ *     tags: [Customer - KYC]
  *     summary: Check uploaded KYC document completeness
  *     responses:
  *       200:
@@ -1050,7 +1055,7 @@
  * @swagger
  * /api/kyc/country-codes:
  *   get:
- *     tags: [Kyc]
+ *     tags: [Customer - KYC]
  *     summary: Get phone country codes list
  *     responses:
  *       200:
@@ -1204,3 +1209,4 @@
  *           format: binary
  *           description: Back-side image/PDF uploaded in multipart form-data.
  */
+

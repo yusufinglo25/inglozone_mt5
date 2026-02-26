@@ -199,9 +199,18 @@ function buildAutoPathDocs() {
       }
 
       if (!paths[openApiPath][method]) {
-        const tag = mountPrefix.replace('/api/', '').replace('/', '') || 'General'
+        const tagMap = {
+          '/api/auth': 'Customer - Auth',
+          '/api/user': 'Customer - User',
+          '/api/accounts': 'Customer - Accounts',
+          '/api/wallet': 'Customer - Wallet',
+          '/api/kyc': 'Customer - KYC',
+          '/api/settings': 'Customer - Settings',
+          '/api/admin': 'Admin - General'
+        }
+        const tag = tagMap[mountPrefix] || 'General'
         paths[openApiPath][method] = {
-          tags: [tag.charAt(0).toUpperCase() + tag.slice(1)],
+          tags: [tag],
           summary: `Auto-generated documentation for ${method.toUpperCase()} ${openApiPath}`,
           responses: getDefaultJsonResponses()
         }
@@ -221,6 +230,22 @@ function getSwaggerSpec() {
         version: '1.0.0',
         description: 'Auto-generated OpenAPI docs from existing route files + optional manual JSDoc docs.'
       },
+      tags: [
+        { name: 'Health', description: 'System health endpoints' },
+        { name: 'Customer', description: 'Customer panel APIs' },
+        { name: 'Customer - Auth', description: 'Customer authentication and registration' },
+        { name: 'Customer - User', description: 'Customer user profile APIs' },
+        { name: 'Customer - Accounts', description: 'Customer trading account APIs' },
+        { name: 'Customer - Wallet', description: 'Customer wallet and transactions APIs' },
+        { name: 'Customer - KYC', description: 'Customer KYC APIs' },
+        { name: 'Customer - Settings', description: 'Customer security/settings APIs' },
+        { name: 'Admin', description: 'Admin panel APIs' },
+        { name: 'Admin - Auth', description: 'Admin authentication APIs' },
+        { name: 'Admin - Users', description: 'Admin user management APIs' },
+        { name: 'Admin - Compliance', description: 'Admin KYC/compliance APIs' },
+        { name: 'Admin - Dashboard', description: 'Admin dashboard metrics APIs' },
+        { name: 'Admin - General', description: 'Auto-generated admin endpoints' }
+      ],
       servers: [
         { url: process.env.BASE_URL || 'https://temp.inglozone.com' }
       ],
@@ -277,7 +302,7 @@ function getSwaggerSpec() {
         ...buildAutoPathDocs(),
         '/api/kyc/status': {
           get: {
-            tags: ['Kyc'],
+            tags: ['Customer - KYC'],
             summary: 'Get current user KYC workflow status',
             responses: {
               200: {
