@@ -10,7 +10,9 @@ const app = express()
 const swaggerUiAssetsPath = path.dirname(require.resolve('swagger-ui-dist/package.json'))
 app.use('/swagger-ui-assets', express.static(swaggerUiAssetsPath))
 const migrate = require('./src/config/migrate')
+const runAdminMigrations = require('./src/config/admin.migrate')
 migrate()
+runAdminMigrations()
 // const passport = require('passport') // Comment out for now
 
 // Start cleanup job (comment out in development if needed)
@@ -59,6 +61,9 @@ app.use(cors({
   credentials: true
 }))
 
+// Parse URL-encoded form bodies (required for Swagger form submissions)
+app.use(express.urlencoded({ extended: true }))
+
 // Regular JSON parsing for all routes except webhooks
 app.use((req, res, next) => {
   if (req.originalUrl === '/api/webhooks/stripe-webhook') {
@@ -93,6 +98,7 @@ const userRoutes = require('./src/routes/user.routes')
 const walletRoutes = require('./src/routes/wallet.routes')
 const webhookRoutes = require('./src/webhooks/stripe.webhook')
 const kycRoutes = require('./src/routes/kyc.routes')
+const adminRoutes = require('./src/routes/admin.routes')
 
 // Use routes
 app.use('/api/user', userRoutes)
@@ -101,6 +107,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/wallet', walletRoutes)
 app.use('/api/webhooks', webhookRoutes)
 app.use('/api/kyc', kycRoutes)
+app.use('/api/admin', adminRoutes)
 
 // Error handling middleware
 app.use((err, req, res, next) => {

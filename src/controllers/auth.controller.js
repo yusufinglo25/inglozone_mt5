@@ -1,6 +1,13 @@
 const service = require('../services/auth.service')
 const { validatePasswordPolicy } = require('../utils/password-policy')
 
+const getFieldValue = (field) => {
+  if (field && typeof field === 'object' && Object.prototype.hasOwnProperty.call(field, 'value')) {
+    return field.value
+  }
+  return field
+}
+
 // Helper function to add CORS headers
 const addCorsHeaders = (res, req) => {
   res.setHeader('Access-Control-Allow-Origin', req.headers.origin || 'https://customer-panel-inglo.vercel.app');
@@ -38,7 +45,15 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   try {
-    const result = await service.login(req.body)
+    const email = getFieldValue(req.body?.email)
+    const password = getFieldValue(req.body?.password)
+
+    if (!email || !password) {
+      res = addCorsHeaders(res, req);
+      return res.status(400).json({ error: 'Email and password are required' })
+    }
+
+    const result = await service.login({ email, password })
     res = addCorsHeaders(res, req);
     res.json(result)
   } catch (err) {
