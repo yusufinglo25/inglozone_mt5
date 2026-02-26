@@ -11,8 +11,10 @@ const swaggerUiAssetsPath = path.dirname(require.resolve('swagger-ui-dist/packag
 app.use('/swagger-ui-assets', express.static(swaggerUiAssetsPath))
 const migrate = require('./src/config/migrate')
 const runAdminMigrations = require('./src/config/admin.migrate')
+const runSettingsMigrations = require('./src/config/settings.migrate')
 migrate()
 runAdminMigrations()
+runSettingsMigrations()
 // const passport = require('passport') // Comment out for now
 
 // Start cleanup job (comment out in development if needed)
@@ -107,6 +109,7 @@ const walletRoutes = require('./src/routes/wallet.routes')
 const webhookRoutes = require('./src/webhooks/stripe.webhook')
 const kycRoutes = require('./src/routes/kyc.routes')
 const adminRoutes = require('./src/routes/admin.routes')
+const settingsRoutes = require('./src/routes/settings.routes')
 
 // Use routes
 app.use('/api/user', userRoutes)
@@ -116,6 +119,7 @@ app.use('/api/wallet', walletRoutes)
 app.use('/api/webhooks', webhookRoutes)
 app.use('/api/kyc', kycRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/settings', settingsRoutes)
 
 // Error handling middleware
 app.use((err, req, res, next) => {

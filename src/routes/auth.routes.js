@@ -2,7 +2,7 @@ const express = require('express')
 const router = express.Router()
 const controller = require('../controllers/auth.controller')
 const passport = require('passport')
-const jwt = require('jsonwebtoken')
+const authService = require('../services/auth.service')
 
 // OLD ROUTES (if you want to keep direct registration)
 router.post('/register', controller.register) // Direct registration (optional)
@@ -25,20 +25,16 @@ router.get('/google',
 
 router.get('/google/callback',
   passport.authenticate('google', { session: false }),
-  (req, res) => {
+  async (req, res) => {
     try {
       if (!req.user) {
         throw new Error('Authentication failed')
       }
       
-      const token = jwt.sign(
-        { 
-          id: req.user.id, 
-          email: req.user.email,
-          provider: req.user.provider
-        },
-        process.env.JWT_SECRET,
-        { expiresIn: '7d' }
+      const token = await authService.createUserSessionToken(
+        { id: req.user.id, email: req.user.email },
+        req.ip,
+        req.get('User-Agent')
       )
       
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'

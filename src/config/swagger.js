@@ -155,7 +155,17 @@ const MANUALLY_DOCUMENTED_OPERATIONS = new Set([
   'GET /api/admin/kyc/{userId}',
   'POST /api/admin/kyc/{userId}/approve',
   'POST /api/admin/kyc/{userId}/reject',
-  'GET /api/admin/dashboard/stats'
+  'GET /api/admin/dashboard/stats',
+  'POST /api/settings/email-change/request-old-otp',
+  'POST /api/settings/email-change/verify-old-otp',
+  'POST /api/settings/email-change/request-new-otp',
+  'POST /api/settings/email-change/verify-new-otp',
+  'POST /api/settings/password/change',
+  'POST /api/settings/2fa/generate',
+  'POST /api/settings/2fa/verify',
+  'POST /api/settings/2fa/disable',
+  'POST /api/settings/logout-all',
+  'POST /api/settings/logout-others'
 ])
 
 function buildAutoPathDocs() {

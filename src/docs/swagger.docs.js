@@ -7,6 +7,187 @@
  *   - name: Wallet
  *   - name: Kyc
  *   - name: Admin
+ *   - name: Settings
+ */
+
+/**
+ * @swagger
+ * /api/settings/email-change/request-old-otp:
+ *   post:
+ *     tags: [Settings]
+ *     summary: Send OTP to current email for email-change verification
+ *     responses:
+ *       200:
+ *         description: OTP sent to old email
+ */
+
+/**
+ * @swagger
+ * /api/settings/email-change/verify-old-otp:
+ *   post:
+ *     tags: [Settings]
+ *     summary: Verify OTP sent to current email
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [verificationToken, otp]
+ *             properties:
+ *               verificationToken:
+ *                 type: string
+ *               otp:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Old email verified
+ */
+
+/**
+ * @swagger
+ * /api/settings/email-change/request-new-otp:
+ *   post:
+ *     tags: [Settings]
+ *     summary: Send OTP to new email
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [emailChangeToken, newEmail]
+ *             properties:
+ *               emailChangeToken:
+ *                 type: string
+ *               newEmail:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: OTP sent to new email
+ */
+
+/**
+ * @swagger
+ * /api/settings/email-change/verify-new-otp:
+ *   post:
+ *     tags: [Settings]
+ *     summary: Verify OTP sent to new email and update account email
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [newEmailVerificationToken, otp]
+ *             properties:
+ *               newEmailVerificationToken:
+ *                 type: string
+ *               otp:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Email updated
+ */
+
+/**
+ * @swagger
+ * /api/settings/password/change:
+ *   post:
+ *     tags: [Settings]
+ *     summary: Change current user password
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [currentPassword, newPassword, confirmNewPassword]
+ *             properties:
+ *               currentPassword:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *               confirmNewPassword:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password updated
+ */
+
+/**
+ * @swagger
+ * /api/settings/2fa/generate:
+ *   post:
+ *     tags: [Settings]
+ *     summary: Generate Google Authenticator QR for 2FA setup
+ *     responses:
+ *       200:
+ *         description: QR generated
+ */
+
+/**
+ * @swagger
+ * /api/settings/2fa/verify:
+ *   post:
+ *     tags: [Settings]
+ *     summary: Verify 2FA code and enable 2FA
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: 2FA enabled
+ */
+
+/**
+ * @swagger
+ * /api/settings/2fa/disable:
+ *   post:
+ *     tags: [Settings]
+ *     summary: Disable 2FA for current user
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: 2FA disabled
+ */
+
+/**
+ * @swagger
+ * /api/settings/logout-all:
+ *   post:
+ *     tags: [Settings]
+ *     summary: Logout from all devices
+ *     responses:
+ *       200:
+ *         description: Logged out from all sessions
+ */
+
+/**
+ * @swagger
+ * /api/settings/logout-others:
+ *   post:
+ *     tags: [Settings]
+ *     summary: Logout from all devices except current
+ *     responses:
+ *       200:
+ *         description: Logged out from other sessions
  */
 
 /**

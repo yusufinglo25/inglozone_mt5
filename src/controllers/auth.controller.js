@@ -53,7 +53,13 @@ exports.login = async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' })
     }
 
-    const result = await service.login({ email, password })
+    const result = await service.login({
+      email,
+      password,
+      twoFactorCode: getFieldValue(req.body?.twoFactorCode),
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    })
     res = addCorsHeaders(res, req);
     res.json(result)
   } catch (err) {
@@ -115,7 +121,10 @@ exports.verifyOTP = async (req, res) => {
       })
     }
     
-    const result = await service.verifyRegistrationOTP(tempToken, otp)
+    const result = await service.verifyRegistrationOTP(tempToken, otp, {
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    })
     res = addCorsHeaders(res, req);
     res.status(201).json(result)
   } catch (err) {
