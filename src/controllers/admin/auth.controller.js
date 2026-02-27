@@ -46,6 +46,16 @@ exports.loginWithPassword = async (req, res) => {
   }
 }
 
+exports.bootstrapSuperAdmin = async (req, res) => {
+  try {
+    const bootstrapKey = req.headers['x-bootstrap-key'] || req.body.bootstrapKey
+    const result = await adminAuthService.bootstrapSuperAdmin(bootstrapKey)
+    return res.json(result)
+  } catch (error) {
+    return res.status(400).json({ error: error.message })
+  }
+}
+
 exports.logout = async (req, res) => {
   try {
     await adminAuthService.logout(req.adminToken, { jti: req.adminSession.jwt_id })

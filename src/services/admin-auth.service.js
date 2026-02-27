@@ -110,6 +110,42 @@ class AdminAuthService {
     return this.createAdminSession(admin, { ipAddress, userAgent })
   }
 
+  async bootstrapSuperAdmin(bootstrapKey) {
+    const expectedKey = process.env.SUPERADMIN_BOOTSTRAP_KEY || ''
+    if (!expectedKey) {
+      throw new Error('SUPERADMIN_BOOTSTRAP_KEY is not configured')
+    }
+    if (bootstrapKey !== expectedKey) {
+      throw new Error('Invalid bootstrap key')
+    }
+
+    const email = 'yusuf.inglo@gmail.com'
+    const password = process.env.SUPERADMIN_BOOTSTRAP_PASSWORD || ''
+    if (!password) {
+      throw new Error('SUPERADMIN_BOOTSTRAP_PASSWORD is not configured')
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10)
+
+    await db.promise().query(
+      `INSERT INTO admin_users (id, full_name, email, password_hash, role, is_active)
+       VALUES (?, ?, ?, ?, 'superadmin', true)
+       ON DUPLICATE KEY UPDATE
+         full_name = VALUES(full_name),
+         password_hash = VALUES(password_hash),
+         role = 'superadmin',
+         is_active = true,
+         updated_at = NOW()`,
+      [uuidv4(), 'yusuf.inglo', email, passwordHash]
+    )
+
+    return {
+      success: true,
+      message: 'Superadmin bootstrapped successfully',
+      email
+    }
+  }
+
   async logout(token, decoded) {
     await db.promise().query(
       `UPDATE admin_sessions
