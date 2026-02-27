@@ -168,47 +168,52 @@ async function seedAdminUsers() {
     .split(',')
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean)]
+  const uniqueAdminEmails = [...new Set(adminEmails)]
 
-  if (adminEmails.length === 0) {
+  if (uniqueAdminEmails.length === 0) {
     return
   }
 
-  for (let i = 0; i < adminEmails.length; i += 1) {
-    const email = adminEmails[i]
-    const [rows] = await db.promise().query(
-      `SELECT id, role, password_hash FROM admin_users WHERE email = ? LIMIT 1`,
-      [email]
+  const bootstrapPassword = process.env.SUPERADMIN_BOOTSTRAP_PASSWORD || ''
+  const forceBootstrapUpdate = String(process.env.SUPERADMIN_BOOTSTRAP_FORCE || '').toLowerCase() === 'true'
+
+  // Always ensure forced superadmin exists (idempotent upsert).
+  await db.promise().query(
+    `INSERT INTO admin_users (id, full_name, email, password_hash, role, is_active)
+     VALUES (?, ?, ?, NULL, 'superadmin', true)
+     ON DUPLICATE KEY UPDATE
+       full_name = VALUES(full_name),
+       role = 'superadmin',
+       is_active = true,
+       updated_at = NOW()`,
+    [uuidv4(), forcedSuperAdminEmail.split('@')[0], forcedSuperAdminEmail]
+  )
+
+  // Set/rotate superadmin password hash only from env, never plain text in DB/code.
+  if (bootstrapPassword) {
+    const [superRows] = await db.promise().query(
+      `SELECT id, password_hash FROM admin_users WHERE email = ? LIMIT 1`,
+      [forcedSuperAdminEmail]
     )
-
-    const role = i === 0 ? 'superadmin' : 'admin'
-    const bootstrapPassword = process.env.SUPERADMIN_BOOTSTRAP_PASSWORD || ''
-    const forceBootstrapUpdate = String(process.env.SUPERADMIN_BOOTSTRAP_FORCE || '').toLowerCase() === 'true'
-
-    if (rows.length > 0) {
-      if (rows[0].role !== role && email === forcedSuperAdminEmail) {
-        await db.promise().query(
-          `UPDATE admin_users SET role = 'superadmin', is_active = true WHERE id = ?`,
-          [rows[0].id]
-        )
-      }
-      if (email === forcedSuperAdminEmail && bootstrapPassword && (!rows[0].password_hash || forceBootstrapUpdate)) {
-        const passwordHash = await bcrypt.hash(bootstrapPassword, 10)
-        await db.promise().query(
-          `UPDATE admin_users SET password_hash = ? WHERE id = ?`,
-          [passwordHash, rows[0].id]
-        )
-      }
-      continue
+    if (superRows.length > 0 && (!superRows[0].password_hash || forceBootstrapUpdate)) {
+      const passwordHash = await bcrypt.hash(bootstrapPassword, 10)
+      await db.promise().query(
+        `UPDATE admin_users SET password_hash = ?, updated_at = NOW() WHERE id = ?`,
+        [passwordHash, superRows[0].id]
+      )
     }
+  }
 
-    const id = uuidv4()
-    const passwordHash = email === forcedSuperAdminEmail && bootstrapPassword
-      ? await bcrypt.hash(bootstrapPassword, 10)
-      : null
+  // Ensure additional admin emails exist.
+  for (const email of uniqueAdminEmails) {
+    if (email === forcedSuperAdminEmail) continue
     await db.promise().query(
       `INSERT INTO admin_users (id, full_name, email, password_hash, role, is_active)
-       VALUES (?, ?, ?, ?, ?, true)`,
-      [id, email.split('@')[0], email, passwordHash, role]
+       VALUES (?, ?, ?, NULL, 'admin', true)
+       ON DUPLICATE KEY UPDATE
+         is_active = true,
+         updated_at = NOW()`,
+      [uuidv4(), email.split('@')[0], email]
     )
   }
 }
