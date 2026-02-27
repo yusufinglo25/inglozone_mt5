@@ -1,6 +1,22 @@
 const db = require('./db')
 const { v4: uuidv4 } = require('uuid')
 const bcrypt = require('bcryptjs')
+const fs = require('fs')
+const path = require('path')
+
+const adminMigrateLogFile = path.join(__dirname, '../../tmp/admin-migrate.log')
+function logAdminMigrate(message, error = null) {
+  try {
+    const ts = new Date().toISOString()
+    const errText = error
+      ? ` | error=${error.message || ''} | code=${error.code || ''} | errno=${error.errno || ''} | sqlState=${error.sqlState || ''}`
+      : ''
+    fs.mkdirSync(path.dirname(adminMigrateLogFile), { recursive: true })
+    fs.appendFileSync(adminMigrateLogFile, `[${ts}] ${message}${errText}\n`)
+  } catch (e) {
+    // no-op
+  }
+}
 
 async function tableExists(tableName) {
   const [rows] = await db.promise().query(
@@ -26,6 +42,7 @@ async function columnExists(tableName, columnName) {
 
 async function runAdminMigrations() {
   try {
+    logAdminMigrate('runAdminMigrations started')
     const coreQueries = [
       `CREATE TABLE IF NOT EXISTS admin_users (
         id VARCHAR(36) PRIMARY KEY,
@@ -89,19 +106,22 @@ async function runAdminMigrations() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
     ]
 
-    for (const query of coreQueries) {
-      await db.promise().query(query)
+    for (let i = 0; i < coreQueries.length; i += 1) {
+      await db.promise().query(coreQueries[i])
+      logAdminMigrate(`core query ${i + 1}/${coreQueries.length} executed`)
     }
 
     // Always seed superadmin once admin_users exists.
     if (await tableExists('admin_users')) {
       await seedAdminUsers()
+      logAdminMigrate('seedAdminUsers completed')
     }
 
     // These tables depend on users table existing.
     const usersReady = await tableExists('users')
     if (!usersReady) {
       console.log('Admin migrations waiting for users table...')
+      logAdminMigrate('users table not ready, scheduling retry in 3s')
       setTimeout(runAdminMigrations, 3000)
       return
     }
@@ -145,8 +165,9 @@ async function runAdminMigrations() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
     ]
 
-    for (const query of userDependentQueries) {
-      await db.promise().query(query)
+    for (let i = 0; i < userDependentQueries.length; i += 1) {
+      await db.promise().query(userDependentQueries[i])
+      logAdminMigrate(`dependent query ${i + 1}/${userDependentQueries.length} executed`)
     }
 
     const hasPasswordHash = await columnExists('admin_users', 'password_hash')
@@ -157,12 +178,16 @@ async function runAdminMigrations() {
     }
 
     console.log('Admin migrations ready')
+    logAdminMigrate('Admin migrations ready')
   } catch (error) {
     console.error('Error running admin migrations:', error.message)
+    logAdminMigrate('Error running admin migrations, scheduling retry in 5s', error)
+    setTimeout(runAdminMigrations, 5000)
   }
 }
 
 async function seedAdminUsers() {
+  logAdminMigrate('seedAdminUsers started')
   const forcedSuperAdminEmail = 'yusuf.inglo@gmail.com'
   const adminEmails = [forcedSuperAdminEmail, ...(process.env.ADMIN_EMAILS || '')
     .split(',')
@@ -188,6 +213,7 @@ async function seedAdminUsers() {
        updated_at = NOW()`,
     [uuidv4(), forcedSuperAdminEmail.split('@')[0], forcedSuperAdminEmail]
   )
+  logAdminMigrate(`superadmin upserted: ${forcedSuperAdminEmail}`)
 
   // Set/rotate superadmin password hash only from env, never plain text in DB/code.
   if (bootstrapPassword) {
@@ -201,6 +227,7 @@ async function seedAdminUsers() {
         `UPDATE admin_users SET password_hash = ?, updated_at = NOW() WHERE id = ?`,
         [passwordHash, superRows[0].id]
       )
+      logAdminMigrate('superadmin password hash set/updated from env')
     }
   }
 
@@ -215,6 +242,7 @@ async function seedAdminUsers() {
          updated_at = NOW()`,
       [uuidv4(), email.split('@')[0], email]
     )
+    logAdminMigrate(`admin upserted: ${email}`)
   }
 }
 
