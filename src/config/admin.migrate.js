@@ -26,7 +26,7 @@ async function columnExists(tableName, columnName) {
 
 async function runAdminMigrations() {
   try {
-    const queries = [
+    const coreQueries = [
       `CREATE TABLE IF NOT EXISTS admin_users (
         id VARCHAR(36) PRIMARY KEY,
         zoho_user_id VARCHAR(128) UNIQUE,
@@ -86,8 +86,27 @@ async function runAdminMigrations() {
         INDEX idx_user_access_status (login_access_status),
         CONSTRAINT fk_user_access_updated_by
           FOREIGN KEY (updated_by) REFERENCES admin_users(id) ON DELETE SET NULL
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    ]
 
+    for (const query of coreQueries) {
+      await db.promise().query(query)
+    }
+
+    // Always seed superadmin once admin_users exists.
+    if (await tableExists('admin_users')) {
+      await seedAdminUsers()
+    }
+
+    // These tables depend on users table existing.
+    const usersReady = await tableExists('users')
+    if (!usersReady) {
+      console.log('Admin migrations waiting for users table...')
+      setTimeout(runAdminMigrations, 3000)
+      return
+    }
+
+    const userDependentQueries = [
       `CREATE TABLE IF NOT EXISTS risk_profiles (
         id VARCHAR(36) PRIMARY KEY,
         user_id VARCHAR(36) NOT NULL UNIQUE,
@@ -126,7 +145,7 @@ async function runAdminMigrations() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
     ]
 
-    for (const query of queries) {
+    for (const query of userDependentQueries) {
       await db.promise().query(query)
     }
 
@@ -135,10 +154,6 @@ async function runAdminMigrations() {
       await db.promise().query(
         `ALTER TABLE admin_users ADD COLUMN password_hash VARCHAR(255) NULL`
       )
-    }
-
-    if (await tableExists('admin_users')) {
-      await seedAdminUsers()
     }
 
     console.log('Admin migrations ready')
@@ -167,6 +182,7 @@ async function seedAdminUsers() {
 
     const role = i === 0 ? 'superadmin' : 'admin'
     const bootstrapPassword = process.env.SUPERADMIN_BOOTSTRAP_PASSWORD || ''
+    const forceBootstrapUpdate = String(process.env.SUPERADMIN_BOOTSTRAP_FORCE || '').toLowerCase() === 'true'
 
     if (rows.length > 0) {
       if (rows[0].role !== role && email === forcedSuperAdminEmail) {
@@ -175,7 +191,7 @@ async function seedAdminUsers() {
           [rows[0].id]
         )
       }
-      if (email === forcedSuperAdminEmail && bootstrapPassword && !rows[0].password_hash) {
+      if (email === forcedSuperAdminEmail && bootstrapPassword && (!rows[0].password_hash || forceBootstrapUpdate)) {
         const passwordHash = await bcrypt.hash(bootstrapPassword, 10)
         await db.promise().query(
           `UPDATE admin_users SET password_hash = ? WHERE id = ?`,
