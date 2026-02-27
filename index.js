@@ -2,10 +2,46 @@ require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 const path = require('path')
+const fs = require('fs')
 const { swaggerUi, getSwaggerSpec } = require('./src/config/swagger')
 const jwt = require('jsonwebtoken')
 
 const app = express()
+
+// Tiny startup/runtime logger for cPanel environments.
+const startupLogDir = path.join(__dirname, 'tmp')
+const startupLogFile = path.join(startupLogDir, 'startup.log')
+try {
+  fs.mkdirSync(startupLogDir, { recursive: true })
+
+  const writeStartupLog = (level, args) => {
+    const ts = new Date().toISOString()
+    const message = args.map((arg) => {
+      if (arg instanceof Error) return `${arg.message}\n${arg.stack || ''}`
+      if (typeof arg === 'object') {
+        try { return JSON.stringify(arg) } catch (e) { return '[object]' }
+      }
+      return String(arg)
+    }).join(' ')
+
+    fs.appendFileSync(startupLogFile, `[${ts}] [${level}] ${message}\n`)
+  }
+
+  const originalLog = console.log.bind(console)
+  const originalError = console.error.bind(console)
+  console.log = (...args) => {
+    writeStartupLog('INFO', args)
+    originalLog(...args)
+  }
+  console.error = (...args) => {
+    writeStartupLog('ERROR', args)
+    originalError(...args)
+  }
+
+  console.log(`Startup logger active: ${startupLogFile}`)
+} catch (loggerError) {
+  console.error('Failed to initialize startup logger:', loggerError.message)
+}
 
 const swaggerUiAssetsPath = path.dirname(require.resolve('swagger-ui-dist/package.json'))
 app.use('/swagger-ui-assets', express.static(swaggerUiAssetsPath))
