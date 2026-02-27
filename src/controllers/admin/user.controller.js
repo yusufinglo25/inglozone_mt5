@@ -53,3 +53,20 @@ exports.blockUserLogin = async (req, res) => {
     return res.status(400).json({ error: error.message })
   }
 }
+
+exports.setUserPassword = async (req, res) => {
+  try {
+    const { email, zohoUserId, password, fullName, department } = req.body
+    const result = await adminUserService.setUserPassword({
+      targetEmail: email,
+      targetZohoUserId: zohoUserId,
+      password,
+      updatedBy: req.admin.id,
+      fullName,
+      department
+    })
+    return res.json({ success: true, data: result })
+  } catch (error) {
+    return res.status(400).json({ error: error.message })
+  }
+}

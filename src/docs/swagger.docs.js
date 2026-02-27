@@ -235,6 +235,32 @@
 
 /**
  * @swagger
+ * /api/admin/auth/login-password:
+ *   post:
+ *     tags: [Admin - Auth]
+ *     summary: Admin login using email and password
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Admin login successful
+ *       401:
+ *         description: Invalid credentials
+ */
+
+/**
+ * @swagger
  * /api/admin/auth/logout:
  *   post:
  *     tags: [Admin - Auth]
@@ -344,6 +370,35 @@
  *     responses:
  *       200:
  *         description: Login access blocked
+ */
+
+/**
+ * @swagger
+ * /api/admin/users/set-password:
+ *   patch:
+ *     tags: [Admin - Users]
+ *     summary: Create or reset password for a Zoho-managed admin user (superadmin only)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *               zohoUserId:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *               fullName:
+ *                 type: string
+ *               department:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password created or updated
  */
 
 /**

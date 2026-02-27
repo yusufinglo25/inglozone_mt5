@@ -1,5 +1,6 @@
 const db = require('./db')
 const { v4: uuidv4 } = require('uuid')
+const bcrypt = require('bcryptjs')
 
 async function tableExists(tableName) {
   const [rows] = await db.promise().query(
@@ -7,6 +8,18 @@ async function tableExists(tableName) {
      FROM information_schema.TABLES
      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
     [tableName]
+  )
+  return rows[0].count > 0
+}
+
+async function columnExists(tableName, columnName) {
+  const [rows] = await db.promise().query(
+    `SELECT COUNT(*) AS count
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?
+       AND COLUMN_NAME = ?`,
+    [tableName, columnName]
   )
   return rows[0].count > 0
 }
@@ -19,6 +32,7 @@ async function runAdminMigrations() {
         zoho_user_id VARCHAR(128) UNIQUE,
         full_name VARCHAR(150) NOT NULL,
         email VARCHAR(255) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NULL,
         department VARCHAR(120),
         role ENUM('superadmin', 'admin', 'accounts') NOT NULL DEFAULT 'accounts',
         is_active BOOLEAN DEFAULT true,
@@ -116,6 +130,13 @@ async function runAdminMigrations() {
       await db.promise().query(query)
     }
 
+    const hasPasswordHash = await columnExists('admin_users', 'password_hash')
+    if (!hasPasswordHash) {
+      await db.promise().query(
+        `ALTER TABLE admin_users ADD COLUMN password_hash VARCHAR(255) NULL`
+      )
+    }
+
     if (await tableExists('admin_users')) {
       await seedAdminUsers()
     }
@@ -127,10 +148,11 @@ async function runAdminMigrations() {
 }
 
 async function seedAdminUsers() {
-  const adminEmails = (process.env.ADMIN_EMAILS || '')
+  const forcedSuperAdminEmail = 'yusuf.inglo@gmail.com'
+  const adminEmails = [forcedSuperAdminEmail, ...(process.env.ADMIN_EMAILS || '')
     .split(',')
     .map((email) => email.trim().toLowerCase())
-    .filter(Boolean)
+    .filter(Boolean)]
 
   if (adminEmails.length === 0) {
     return
@@ -139,20 +161,38 @@ async function seedAdminUsers() {
   for (let i = 0; i < adminEmails.length; i += 1) {
     const email = adminEmails[i]
     const [rows] = await db.promise().query(
-      `SELECT id FROM admin_users WHERE email = ? LIMIT 1`,
+      `SELECT id, role, password_hash FROM admin_users WHERE email = ? LIMIT 1`,
       [email]
     )
 
+    const role = i === 0 ? 'superadmin' : 'admin'
+    const bootstrapPassword = process.env.SUPERADMIN_BOOTSTRAP_PASSWORD || ''
+
     if (rows.length > 0) {
+      if (rows[0].role !== role && email === forcedSuperAdminEmail) {
+        await db.promise().query(
+          `UPDATE admin_users SET role = 'superadmin', is_active = true WHERE id = ?`,
+          [rows[0].id]
+        )
+      }
+      if (email === forcedSuperAdminEmail && bootstrapPassword && !rows[0].password_hash) {
+        const passwordHash = await bcrypt.hash(bootstrapPassword, 10)
+        await db.promise().query(
+          `UPDATE admin_users SET password_hash = ? WHERE id = ?`,
+          [passwordHash, rows[0].id]
+        )
+      }
       continue
     }
 
     const id = uuidv4()
-    const role = i === 0 ? 'superadmin' : 'admin'
+    const passwordHash = email === forcedSuperAdminEmail && bootstrapPassword
+      ? await bcrypt.hash(bootstrapPassword, 10)
+      : null
     await db.promise().query(
-      `INSERT INTO admin_users (id, full_name, email, role, is_active)
-       VALUES (?, ?, ?, ?, true)`,
-      [id, email.split('@')[0], email, role]
+      `INSERT INTO admin_users (id, full_name, email, password_hash, role, is_active)
+       VALUES (?, ?, ?, ?, ?, true)`,
+      [id, email.split('@')[0], email, passwordHash, role]
     )
   }
 }

@@ -25,6 +25,27 @@ exports.login = async (req, res) => {
   }
 }
 
+exports.loginWithPassword = async (req, res) => {
+  try {
+    const { email, password } = req.body
+    const result = await adminAuthService.loginWithPassword({
+      email,
+      password,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    })
+
+    return res.json({
+      success: true,
+      message: 'Admin login successful',
+      token: result.token,
+      admin: result.admin
+    })
+  } catch (error) {
+    return res.status(401).json({ error: error.message })
+  }
+}
+
 exports.logout = async (req, res) => {
   try {
     await adminAuthService.logout(req.adminToken, { jti: req.adminSession.jwt_id })

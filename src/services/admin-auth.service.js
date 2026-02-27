@@ -1,5 +1,6 @@
 const crypto = require('crypto')
 const jwt = require('jsonwebtoken')
+const bcrypt = require('bcryptjs')
 const { v4: uuidv4 } = require('uuid')
 const db = require('../config/db')
 const zohoService = require('./zoho.service')
@@ -9,11 +10,7 @@ class AdminAuthService {
     return crypto.createHash('sha256').update(token).digest('hex')
   }
 
-  async loginWithZoho({ code, redirectUri, ipAddress, userAgent }) {
-    const tokenData = await zohoService.exchangeAuthorizationCode(code, redirectUri)
-    const profile = await zohoService.getUserProfile(tokenData.access_token)
-    const admin = await this.getAuthorizedAdmin(profile)
-
+  async createAdminSession(admin, sessionData = {}) {
     const jti = uuidv4()
     const token = jwt.sign(
       {
@@ -41,11 +38,11 @@ class AdminAuthService {
         admin.id,
         jti,
         this.hashToken(token),
-        tokenData.access_token || null,
-        tokenData.refresh_token || null,
-        tokenData.expires_in ? new Date(Date.now() + (tokenData.expires_in * 1000)) : null,
-        ipAddress || null,
-        userAgent || null,
+        sessionData.zohoAccessToken || null,
+        sessionData.zohoRefreshToken || null,
+        sessionData.zohoExpiresAt || null,
+        sessionData.ipAddress || null,
+        sessionData.userAgent || null,
         expiresAt
       ]
     )
@@ -60,6 +57,57 @@ class AdminAuthService {
         role: admin.role
       }
     }
+  }
+
+  async loginWithZoho({ code, redirectUri, ipAddress, userAgent }) {
+    const tokenData = await zohoService.exchangeAuthorizationCode(code, redirectUri)
+    const profile = await zohoService.getUserProfile(tokenData.access_token)
+    const admin = await this.getAuthorizedAdmin(profile)
+    return this.createAdminSession(admin, {
+      zohoAccessToken: tokenData.access_token || null,
+      zohoRefreshToken: tokenData.refresh_token || null,
+      zohoExpiresAt: tokenData.expires_in ? new Date(Date.now() + (tokenData.expires_in * 1000)) : null,
+      ipAddress,
+      userAgent
+    })
+  }
+
+  async loginWithPassword({ email, password, ipAddress, userAgent }) {
+    const normalizedEmail = String(email || '').trim().toLowerCase()
+    if (!normalizedEmail || !password) {
+      throw new Error('Email and password are required')
+    }
+
+    const [rows] = await db.promise().query(
+      `SELECT * FROM admin_users WHERE email = ? LIMIT 1`,
+      [normalizedEmail]
+    )
+
+    const admin = rows[0]
+    if (!admin || !admin.password_hash) {
+      throw new Error('Invalid credentials')
+    }
+    if (!admin.is_active) {
+      throw new Error('Admin account is inactive')
+    }
+
+    const [accessRows] = await db.promise().query(
+      `SELECT login_access_status
+       FROM user_access_control
+       WHERE email = ? OR zoho_user_id = ?
+       LIMIT 1`,
+      [admin.email, admin.zoho_user_id || null]
+    )
+    if (accessRows[0]?.login_access_status === 'blocked') {
+      throw new Error('Login blocked for this admin')
+    }
+
+    const valid = await bcrypt.compare(password, admin.password_hash)
+    if (!valid) {
+      throw new Error('Invalid credentials')
+    }
+
+    return this.createAdminSession(admin, { ipAddress, userAgent })
   }
 
   async logout(token, decoded) {
