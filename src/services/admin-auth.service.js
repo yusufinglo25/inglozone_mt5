@@ -10,6 +10,29 @@ class AdminAuthService {
     return crypto.createHash('sha256').update(token).digest('hex')
   }
 
+  getAdminTokenExpiry() {
+    const raw = String(process.env.ADMIN_JWT_EXPIRES_IN || '').trim()
+    if (!raw) return '372h'
+    // If only a number is provided in env (e.g. "12"), treat it as hours.
+    if (/^\d+$/.test(raw)) return `${raw}h`
+    const compact = raw.toLowerCase().replace(/\s+/g, '')
+    // Support forms like "15d12h" or "15d 12h".
+    const dayHourMatch = compact.match(/^(\d+)d(\d+)h$/)
+    if (dayHourMatch) {
+      const days = parseInt(dayHourMatch[1], 10)
+      const hours = parseInt(dayHourMatch[2], 10)
+      return `${(days * 24) + hours}h`
+    }
+    // Support forms like "15 days 12 hrs".
+    const verboseMatch = raw.toLowerCase().match(/(\d+)\s*day[s]?\s*(\d+)\s*h(?:ou)?r[s]?/)
+    if (verboseMatch) {
+      const days = parseInt(verboseMatch[1], 10)
+      const hours = parseInt(verboseMatch[2], 10)
+      return `${(days * 24) + hours}h`
+    }
+    return raw
+  }
+
   async createAdminSession(admin, sessionData = {}) {
     const jti = uuidv4()
     const token = jwt.sign(
@@ -22,7 +45,7 @@ class AdminAuthService {
         role: admin.role
       },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.ADMIN_JWT_EXPIRES_IN || '12h' }
+      { expiresIn: this.getAdminTokenExpiry() }
     )
 
     const decoded = jwt.decode(token)
