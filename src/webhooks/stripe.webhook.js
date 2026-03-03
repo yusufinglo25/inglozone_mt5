@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
 const db = require('../config/db')
+const walletService = require('../services/wallet.service')
 
 // Stripe webhook endpoint
 router.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -126,5 +127,16 @@ async function handlePaymentIntentFailed(paymentIntent) {
     }
   )
 }
+
+// Tamara webhook endpoint
+router.post('/tamara-webhook', async (req, res) => {
+  try {
+    const result = await walletService.handleTamaraWebhook(req.body, req)
+    res.json({ received: true, ...result })
+  } catch (error) {
+    console.error('Tamara webhook error:', error.message)
+    res.status(400).json({ error: error.message })
+  }
+})
 
 module.exports = router

@@ -1,8 +1,86 @@
 const db = require('../config/db')
 const { v4: uuidv4 } = require('uuid')
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
+const jwt = require('jsonwebtoken')
 
 class WalletService {
+  getTamaraBaseUrl() {
+    return (process.env.TAMARA_API_URL || 'https://api-sandbox.tamara.co').replace(/\/+$/, '')
+  }
+
+  getTamaraNotificationUrl() {
+    const baseUrl = (process.env.BASE_URL || 'https://temp.inglozone.com').replace(/\/+$/, '')
+    return `${baseUrl}/api/webhooks/tamara-webhook`
+  }
+
+  async tamaraRequest(path, method = 'GET', body = null) {
+    const token = process.env.TAMARA_API_TOKEN
+    if (!token) {
+      throw new Error('TAMARA_API_TOKEN is not configured')
+    }
+
+    const response = await fetch(`${this.getTamaraBaseUrl()}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: body ? JSON.stringify(body) : undefined
+    })
+
+    const contentType = response.headers.get('content-type') || ''
+    const data = contentType.includes('application/json')
+      ? await response.json()
+      : await response.text()
+
+    if (!response.ok) {
+      const message = typeof data === 'object'
+        ? (data.message || data.error || JSON.stringify(data))
+        : data
+      throw new Error(`Tamara API error: ${message}`)
+    }
+
+    return data
+  }
+
+  async markTransactionCompleted(transactionId, externalPaymentId = null) {
+    const transaction = await new Promise((resolve, reject) => {
+      db.query(`SELECT * FROM transactions WHERE id = ? LIMIT 1`, [transactionId], (err, results) => {
+        if (err || results.length === 0) return reject(new Error('Transaction not found'))
+        resolve(results[0])
+      })
+    })
+
+    if (transaction.status === 'completed') {
+      return { alreadyCompleted: true, transaction }
+    }
+
+    await new Promise((resolve, reject) => {
+      db.query(
+        `UPDATE transactions
+         SET status = 'completed',
+             stripe_payment_id = COALESCE(?, stripe_payment_id),
+             updated_at = NOW()
+         WHERE id = ?`,
+        [externalPaymentId, transactionId],
+        (err) => (err ? reject(err) : resolve())
+      )
+    })
+
+    await new Promise((resolve, reject) => {
+      db.query(
+        `UPDATE wallets
+         SET balance = balance + ?,
+             updated_at = NOW()
+         WHERE user_id = ?`,
+        [transaction.amount, transaction.user_id],
+        (err) => (err ? reject(err) : resolve())
+      )
+    })
+
+    return { alreadyCompleted: false, transaction }
+  }
+
   // Get user wallet balance
   async getWallet(userId) {
     return new Promise((resolve, reject) => {
@@ -233,6 +311,290 @@ class WalletService {
     } catch (error) {
       throw error
     }
+  }
+
+  async createTamaraDepositIntent(userId, amountAED) {
+    const numericAmountAED = parseFloat(amountAED)
+    if (!numericAmountAED || Number.isNaN(numericAmountAED) || numericAmountAED <= 0) {
+      throw new Error('Valid amount is required')
+    }
+
+    const amountUSD = parseFloat((numericAmountAED / 3.66).toFixed(2))
+    if (amountUSD < 1) {
+      throw new Error('Minimum deposit amount is 3.66 AED (1 USD)')
+    }
+
+    const user = await new Promise((resolve, reject) => {
+      db.query(
+        `SELECT id, email, first_name, last_name, mobile FROM users WHERE id = ?`,
+        [userId],
+        (err, results) => {
+          if (err || results.length === 0) return reject(new Error('User not found'))
+          resolve(results[0])
+        }
+      )
+    })
+
+    const wallet = await this.getWallet(userId)
+    const transactionId = uuidv4()
+
+    await new Promise((resolve, reject) => {
+      db.query(
+        `INSERT INTO transactions (id, user_id, wallet_id, type, amount, currency, status, description, metadata)
+         VALUES (?, ?, ?, 'deposit', ?, 'USD', 'pending', ?, ?)`,
+        [
+          transactionId,
+          userId,
+          wallet.id,
+          amountUSD,
+          `Tamara deposit of ${numericAmountAED} AED (${amountUSD} USD)`,
+          JSON.stringify({
+            paymentProvider: 'tamara',
+            tamara: { status: 'created', amountAED: numericAmountAED }
+          })
+        ],
+        (err) => (err ? reject(err) : resolve())
+      )
+    })
+
+    const countryCode = process.env.TAMARA_COUNTRY_CODE || 'AE'
+    const phone = String(user.mobile || '').replace(/\D/g, '')
+    const frontendBase = (process.env.FRONTEND_URL || '').replace(/\/+$/, '')
+
+    const payload = {
+      total_amount: { amount: numericAmountAED, currency: 'AED' },
+      shipping_amount: { amount: 0, currency: 'AED' },
+      tax_amount: { amount: 0, currency: 'AED' },
+      order_reference_id: transactionId,
+      order_number: transactionId,
+      description: `Wallet deposit for ${user.email}`,
+      country_code: countryCode,
+      payment_type: 'PAY_BY_INSTALMENTS',
+      instalments: process.env.TAMARA_DEFAULT_INSTALLMENTS
+        ? parseInt(process.env.TAMARA_DEFAULT_INSTALLMENTS, 10)
+        : undefined,
+      consumer: {
+        first_name: user.first_name || 'Customer',
+        last_name: user.last_name || 'User',
+        phone_number: phone || '971500000000',
+        email: user.email
+      },
+      shipping_address: {
+        first_name: user.first_name || 'Customer',
+        last_name: user.last_name || 'User',
+        line1: 'Not provided',
+        city: 'Dubai',
+        country_code: countryCode,
+        phone_number: phone || '971500000000'
+      },
+      billing_address: {
+        first_name: user.first_name || 'Customer',
+        last_name: user.last_name || 'User',
+        line1: 'Not provided',
+        city: 'Dubai',
+        country_code: countryCode,
+        phone_number: phone || '971500000000'
+      },
+      items: [
+        {
+          name: 'Wallet Deposit',
+          type: 'Digital',
+          reference_id: transactionId,
+          sku: 'INGLO-WALLET-DEPOSIT',
+          quantity: 1,
+          unit_price: { amount: numericAmountAED, currency: 'AED' },
+          tax_amount: { amount: 0, currency: 'AED' },
+          total_amount: { amount: numericAmountAED, currency: 'AED' }
+        }
+      ],
+      merchant_url: {
+        success: `${frontendBase}/wallet/tamara/success?transaction_id=${transactionId}`,
+        failure: `${frontendBase}/wallet/tamara/failure?transaction_id=${transactionId}`,
+        cancel: `${frontendBase}/wallet/tamara/cancel?transaction_id=${transactionId}`,
+        notification: this.getTamaraNotificationUrl()
+      }
+    }
+
+    if (!payload.instalments) {
+      delete payload.instalments
+    }
+
+    const checkout = await this.tamaraRequest('/checkout', 'POST', payload)
+    const metadata = {
+      paymentProvider: 'tamara',
+      tamara: {
+        status: checkout.status || 'new',
+        orderId: checkout.order_id,
+        checkoutId: checkout.checkout_id,
+        checkoutUrl: checkout.checkout_url,
+        amountAED: numericAmountAED
+      }
+    }
+
+    await new Promise((resolve, reject) => {
+      db.query(
+        `UPDATE transactions SET metadata = ?, updated_at = NOW() WHERE id = ?`,
+        [JSON.stringify(metadata), transactionId],
+        (err) => (err ? reject(err) : resolve())
+      )
+    })
+
+    return {
+      provider: 'tamara',
+      transactionId,
+      orderId: checkout.order_id,
+      checkoutId: checkout.checkout_id,
+      checkoutUrl: checkout.checkout_url,
+      status: checkout.status,
+      amountAED: numericAmountAED,
+      amountUSD
+    }
+  }
+
+  async verifyTamaraDeposit({ userId, orderId, transactionId }) {
+    let transaction = null
+
+    if (transactionId) {
+      transaction = await new Promise((resolve, reject) => {
+        db.query(
+          `SELECT * FROM transactions WHERE id = ? AND user_id = ? LIMIT 1`,
+          [transactionId, userId],
+          (err, results) => {
+            if (err || results.length === 0) return reject(new Error('Transaction not found'))
+            resolve(results[0])
+          }
+        )
+      })
+    } else if (orderId) {
+      transaction = await new Promise((resolve, reject) => {
+        db.query(
+          `SELECT * FROM transactions
+           WHERE user_id = ?
+             AND JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.tamara.orderId')) = ?
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [userId, orderId],
+          (err, results) => {
+            if (err || results.length === 0) return reject(new Error('Transaction not found'))
+            resolve(results[0])
+          }
+        )
+      })
+    } else {
+      throw new Error('orderId or transactionId is required')
+    }
+
+    const txMetadata = transaction.metadata ? JSON.parse(transaction.metadata) : {}
+    const tamaraOrderId = orderId || txMetadata?.tamara?.orderId
+    if (!tamaraOrderId) throw new Error('Tamara order ID missing')
+
+    const order = await this.tamaraRequest(`/merchants/orders/${tamaraOrderId}`, 'GET')
+    const status = String(order.status || '').toLowerCase()
+    const successStatuses = new Set(['approved', 'authorised', 'fully_captured'])
+
+    if (successStatuses.has(status)) {
+      await this.markTransactionCompleted(transaction.id, tamaraOrderId)
+    } else if (['cancelled', 'expired', 'declined', 'failed'].includes(status)) {
+      await new Promise((resolve, reject) => {
+        db.query(
+          `UPDATE transactions SET status = 'failed', updated_at = NOW() WHERE id = ?`,
+          [transaction.id],
+          (err) => (err ? reject(err) : resolve())
+        )
+      })
+    }
+
+    const updatedMetadata = {
+      ...(txMetadata || {}),
+      paymentProvider: 'tamara',
+      tamara: {
+        ...(txMetadata.tamara || {}),
+        orderId: tamaraOrderId,
+        status: order.status,
+        rawStatus: order.status
+      }
+    }
+
+    await new Promise((resolve, reject) => {
+      db.query(
+        `UPDATE transactions SET metadata = ?, updated_at = NOW() WHERE id = ?`,
+        [JSON.stringify(updatedMetadata), transaction.id],
+        (err) => (err ? reject(err) : resolve())
+      )
+    })
+
+    return {
+      success: successStatuses.has(status),
+      transactionId: transaction.id,
+      orderId: tamaraOrderId,
+      status: order.status
+    }
+  }
+
+  async handleTamaraWebhook(payload, req) {
+    const tokenFromQuery = req.query?.tamaraToken
+    const authHeader = req.headers.authorization || ''
+    const tokenFromHeader = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : null
+    const webhookToken = tokenFromQuery || tokenFromHeader
+
+    if (process.env.TAMARA_NOTIFICATION_TOKEN) {
+      if (!webhookToken) {
+        throw new Error('Tamara webhook token missing')
+      }
+      jwt.verify(webhookToken, process.env.TAMARA_NOTIFICATION_TOKEN)
+    }
+
+    const eventType = String(payload?.event_type || '').toLowerCase()
+    const orderId = payload?.order_id
+    if (!orderId) {
+      return { success: false, message: 'No order_id in webhook payload' }
+    }
+
+    const [transactions] = await db.promise().query(
+      `SELECT * FROM transactions
+       WHERE JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.tamara.orderId')) = ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [orderId]
+    )
+
+    if (transactions.length === 0) {
+      return { success: false, message: 'No transaction found for Tamara order' }
+    }
+
+    const transaction = transactions[0]
+    const order = await this.tamaraRequest(`/merchants/orders/${orderId}`, 'GET')
+    const status = String(order.status || '').toLowerCase()
+    const successStatuses = new Set(['approved', 'authorised', 'fully_captured'])
+
+    if (successStatuses.has(status)) {
+      await this.markTransactionCompleted(transaction.id, orderId)
+    } else if (['cancelled', 'expired', 'declined', 'failed'].includes(status)) {
+      await db.promise().query(
+        `UPDATE transactions SET status = 'failed', updated_at = NOW() WHERE id = ?`,
+        [transaction.id]
+      )
+    }
+
+    const txMetadata = transaction.metadata ? JSON.parse(transaction.metadata) : {}
+    const updatedMetadata = {
+      ...txMetadata,
+      paymentProvider: 'tamara',
+      tamara: {
+        ...(txMetadata.tamara || {}),
+        orderId,
+        status: order.status,
+        lastEventType: eventType
+      }
+    }
+    await db.promise().query(
+      `UPDATE transactions SET metadata = ?, updated_at = NOW() WHERE id = ?`,
+      [JSON.stringify(updatedMetadata), transaction.id]
+    )
+
+    return { success: true, transactionId: transaction.id, orderId, status: order.status }
   }
 
   // Get transaction history

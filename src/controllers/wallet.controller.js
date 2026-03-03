@@ -68,6 +68,54 @@ exports.verifyDeposit = async (req, res) => {
   }
 }
 
+exports.createTamaraDeposit = async (req, res) => {
+  try {
+    const userId = req.user.id
+    const { amount } = req.body
+
+    if (!amount || isNaN(amount) || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid amount is required'
+      })
+    }
+
+    const result = await walletService.createTamaraDepositIntent(userId, parseFloat(amount))
+    res.json({
+      success: true,
+      data: result
+    })
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
+exports.verifyTamaraDeposit = async (req, res) => {
+  try {
+    const userId = req.user.id
+    const { order_id, transaction_id } = req.body
+
+    const result = await walletService.verifyTamaraDeposit({
+      userId,
+      orderId: order_id,
+      transactionId: transaction_id
+    })
+
+    res.json({
+      success: true,
+      data: result
+    })
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
 exports.getTransactions = async (req, res) => {
   try {
     const userId = req.user.id

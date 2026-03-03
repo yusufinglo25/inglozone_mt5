@@ -8,6 +8,8 @@ router.use(authMiddleware.verifyToken)
 router.get('/balance', controller.getWallet)
 router.post('/deposit', controller.createDeposit)
 router.post('/deposit/verify', controller.verifyDeposit)
+router.post('/tamara/deposit', controller.createTamaraDeposit)
+router.post('/tamara/deposit/verify', controller.verifyTamaraDeposit)
 router.get('/transactions', controller.getTransactions)
 router.get('/transactions/:id', controller.getTransaction)
 

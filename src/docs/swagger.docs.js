@@ -1265,3 +1265,72 @@
  *           description: Back-side image/PDF uploaded in multipart form-data.
  */
 
+
+/**
+ * @swagger
+ * /api/wallet/tamara/deposit:
+ *   post:
+ *     tags: [Customer - Wallet]
+ *     summary: Create Tamara checkout for wallet deposit
+ *     description: Amount is provided in AED. Backend creates a pending USD wallet transaction and returns Tamara checkout URL.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [amount]
+ *             properties:
+ *               amount:
+ *                 type: number
+ *                 example: 366
+ *     responses:
+ *       200:
+ *         description: Tamara checkout created
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 provider: tamara
+ *                 transactionId: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
+ *                 orderId: ord_123
+ *                 checkoutId: chk_123
+ *                 checkoutUrl: https://checkout.tamara.co/...
+ *                 status: new
+ *                 amountAED: 366
+ *                 amountUSD: 100
+ */
+
+/**
+ * @swagger
+ * /api/wallet/tamara/deposit/verify:
+ *   post:
+ *     tags: [Customer - Wallet]
+ *     summary: Verify Tamara order status and finalize wallet deposit
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               order_id:
+ *                 type: string
+ *                 example: ord_123
+ *               transaction_id:
+ *                 type: string
+ *                 example: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
+ *     responses:
+ *       200:
+ *         description: Verification result
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 success: true
+ *                 transactionId: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
+ *                 orderId: ord_123
+ *                 status: approved
+ */

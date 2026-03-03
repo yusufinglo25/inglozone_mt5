@@ -138,6 +138,8 @@ const MANUALLY_DOCUMENTED_OPERATIONS = new Set([
   'POST /api/user/complete-profile',
   'POST /api/wallet/deposit',
   'POST /api/wallet/deposit/verify',
+  'POST /api/wallet/tamara/deposit',
+  'POST /api/wallet/tamara/deposit/verify',
   'GET /api/wallet/balance',
   'GET /api/wallet/transactions',
   'GET /api/wallet/transactions/{id}',
