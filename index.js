@@ -77,7 +77,8 @@ app.use((req, res, next) => {
   const allowedOrigins = [
     'https://customer-panel-inglo.vercel.app',
     'https://inglo-zone-admin-panel.vercel.app',
-    'http://localhost:5173'
+    'http://localhost:5173',
+    'https://inglozone.in'
   ]
   const origin = req.headers.origin
   
