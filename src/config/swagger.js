@@ -157,6 +157,9 @@ const MANUALLY_DOCUMENTED_OPERATIONS = new Set([
   'PATCH /api/admin/users/set-password',
   'GET /api/admin/kyc',
   'GET /api/admin/kyc/{userId}',
+  'POST /api/admin/kyc/{userId}/start-review',
+  'POST /api/admin/kyc/{userId}/approve-documents',
+  'POST /api/admin/kyc/{userId}/approve-profile',
   'POST /api/admin/kyc/{userId}/approve',
   'POST /api/admin/kyc/{userId}/reject',
   'GET /api/admin/dashboard/stats',
@@ -325,6 +328,7 @@ function getSwaggerSpec() {
                             allDocuments: { type: 'array', items: { type: 'object', additionalProperties: true } },
                             profileStatus: { type: 'string', example: 'NOT_STARTED', enum: ['NOT_STARTED', 'DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'] },
                             documentStatus: { type: 'string', example: 'NOT_SUBMITTED', enum: ['NOT_SUBMITTED', 'PENDING', 'APPROVED', 'REJECTED'] },
+                            rejectionReason: { type: 'string', nullable: true, example: 'ID document mismatch during review' },
                             nextAction: { type: 'string', example: 'fill_profile' },
                             completion: { type: 'number', example: 0 }
                           }
@@ -341,6 +345,7 @@ function getSwaggerSpec() {
                             allDocuments: [],
                             profileStatus: 'NOT_STARTED',
                             documentStatus: 'NOT_SUBMITTED',
+                            rejectionReason: null,
                             nextAction: 'fill_profile',
                             completion: 0
                           }

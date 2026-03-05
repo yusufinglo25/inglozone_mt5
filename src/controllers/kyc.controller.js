@@ -1,5 +1,6 @@
 // src/controllers/kyc.controller.js
 const kycService = require('../services/kyc.service')
+const db = require('../config/db')
 
 class KYCController {
   // Upload KYC document
@@ -221,6 +222,7 @@ async getCountryCodes(req, res) {
       const hasRequiredDocument = completionStatus.documentDetails.hasPassport || completionStatus.documentDetails.hasCompleteNationalId
 
       let status = 'NOT_SUBMITTED'
+      let rejectionReason = null
 
       if (completionStatus.profileStatus === 'REJECTED' || completionStatus.documentStatus === 'REJECTED') {
         status = 'REJECTED'
@@ -232,6 +234,14 @@ async getCountryCodes(req, res) {
         status = 'IN_PROGRESS'
       }
 
+      if (status === 'REJECTED') {
+        const [reasonRows] = await db.promise().query(
+          `SELECT rejection_reason FROM kyc_records WHERE user_id = ? LIMIT 1`,
+          [userId]
+        )
+        rejectionReason = reasonRows[0]?.rejection_reason || null
+      }
+
       res.json({
         success: true,
         data: {
@@ -240,6 +250,7 @@ async getCountryCodes(req, res) {
           allDocuments: documents,
           profileStatus: completionStatus.profileStatus,
           documentStatus: completionStatus.documentStatus,
+          rejectionReason,
           nextAction: completionStatus.nextAction,
           completion: completionStatus.completion
         }

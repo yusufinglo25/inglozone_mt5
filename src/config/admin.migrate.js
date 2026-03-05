@@ -151,6 +151,7 @@ async function runAdminMigrations() {
         email VARCHAR(255) NOT NULL,
         country VARCHAR(100),
         kyc_status ENUM('Not_Submitted', 'Pending', 'Approved', 'Rejected') NOT NULL DEFAULT 'Not_Submitted',
+        rejection_reason TEXT NULL,
         aml_status ENUM('clear', 'review', 'blocked') NOT NULL DEFAULT 'review',
         full_kyc_details JSON,
         reviewed_by VARCHAR(36),
@@ -184,6 +185,14 @@ async function runAdminMigrations() {
       await db.promise().query(
         `ALTER TABLE admin_users ADD COLUMN password_hash VARCHAR(255) NULL`
       )
+    }
+
+    const hasKycRejectionReason = await columnExists('kyc_records', 'rejection_reason')
+    if (!hasKycRejectionReason) {
+      await db.promise().query(
+        `ALTER TABLE kyc_records ADD COLUMN rejection_reason TEXT NULL AFTER kyc_status`
+      )
+      logAdminMigrate('kyc_records.rejection_reason column added')
     }
 
     console.log('Admin migrations ready')

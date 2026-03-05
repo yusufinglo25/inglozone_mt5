@@ -433,10 +433,81 @@
 
 /**
  * @swagger
+ * /api/admin/kyc/{userId}/start-review:
+ *   post:
+ *     tags: [Admin - Compliance]
+ *     summary: Start KYC review and fetch profile/docs with checklist
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Review context fetched
+ *       404:
+ *         description: Not found
+ */
+
+/**
+ * @swagger
+ * /api/admin/kyc/{userId}/approve-documents:
+ *   post:
+ *     tags: [Admin - Compliance]
+ *     summary: Approve customer KYC documents (left panel step)
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               comment:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Documents approved
+ */
+
+/**
+ * @swagger
+ * /api/admin/kyc/{userId}/approve-profile:
+ *   post:
+ *     tags: [Admin - Compliance]
+ *     summary: Approve customer KYC profile data (right panel step)
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               notes:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Profile approved
+ */
+
+/**
+ * @swagger
  * /api/admin/kyc/{userId}/approve:
  *   post:
  *     tags: [Admin - Compliance]
- *     summary: Approve customer KYC
+ *     summary: Approve full customer KYC (documents + profile)
  *     parameters:
  *       - in: path
  *         name: userId
@@ -462,7 +533,7 @@
  * /api/admin/kyc/{userId}/reject:
  *   post:
  *     tags: [Admin - Compliance]
- *     summary: Reject customer KYC
+ *     summary: Reject customer KYC and reject all linked states
  *     parameters:
  *       - in: path
  *         name: userId
@@ -479,6 +550,7 @@
  *             properties:
  *               comment:
  *                 type: string
+ *                 description: Mandatory rejection reason shown to customer
  *     responses:
  *       200:
  *         description: KYC rejected

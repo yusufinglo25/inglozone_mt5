@@ -13,8 +13,8 @@ class KYCProfileService {
         [userId]
       )
 
-      // If profile exists and is not DRAFT, disallow editing
-      if (existingProfile.length > 0 && existingProfile[0].profile_status !== 'DRAFT') {
+      // Allow editing for DRAFT and REJECTED profiles (resubmission flow).
+      if (existingProfile.length > 0 && !['DRAFT', 'REJECTED'].includes(existingProfile[0].profile_status)) {
         throw new Error('Profile already submitted and cannot be edited')
       }
 
@@ -61,10 +61,14 @@ class KYCProfileService {
         const setClause = Object.keys(cleanedData).map(key => `${key} = ?`).join(', ')
         const values = Object.values(cleanedData)
 
-        const [result] = await db.promise().query(
-          `UPDATE kyc_profiles SET ${setClause} WHERE user_id = ?`,
-          [...values, userId]
-        )
+        const normalizedProfileStatus = String(existingProfile[0].profile_status || '').toUpperCase()
+        let profileUpdateSql = `UPDATE kyc_profiles SET ${setClause}`
+        if (normalizedProfileStatus === 'REJECTED') {
+          profileUpdateSql += `, profile_status = 'DRAFT', review_notes = NULL, reviewed_by = NULL, reviewed_at = NULL`
+        }
+        profileUpdateSql += ` WHERE user_id = ?`
+
+        await db.promise().query(profileUpdateSql, [...values, userId])
 
         return {
           success: true,
@@ -280,7 +284,7 @@ class KYCProfileService {
       )
 
       const [documents] = await db.promise().query(
-        `SELECT document_type, document_side, status 
+        `SELECT document_type, document_side, status, created_at
          FROM kyc_documents 
          WHERE user_id = ?`,
         [userId]
@@ -290,16 +294,26 @@ class KYCProfileService {
       const profileStatus = hasProfile ? profile[0].profile_status : 'NOT_STARTED'
 
       // Check document completeness with side awareness
-      const hasPassport = documents.some(d => d.document_type === 'passport')
-      const hasNationalIdFront = documents.some(d => d.document_type === 'national_id_front')
-      const hasNationalIdBack = documents.some(d => d.document_type === 'national_id_back')
+      const latestByType = new Map()
+      for (const doc of documents) {
+        const key = String(doc.document_type || '')
+        const existing = latestByType.get(key)
+        if (!existing || new Date(doc.created_at) > new Date(existing.created_at)) {
+          latestByType.set(key, doc)
+        }
+      }
+
+      const latestDocs = Array.from(latestByType.values())
+      const hasPassport = latestDocs.some(d => d.document_type === 'passport')
+      const hasNationalIdFront = latestDocs.some(d => d.document_type === 'national_id_front')
+      const hasNationalIdBack = latestDocs.some(d => d.document_type === 'national_id_back')
       const hasCompleteNationalId = hasNationalIdFront && hasNationalIdBack
 
       // Get document status based on most restrictive
       let documentStatus = 'NOT_SUBMITTED'
       let documentApprovalStatus = 'PENDING'
 
-      const relevantDocs = documents.filter(d => 
+      const relevantDocs = latestDocs.filter(d =>
         d.document_type === 'passport' || 
         d.document_type === 'national_id_front' || 
         d.document_type === 'national_id_back'
