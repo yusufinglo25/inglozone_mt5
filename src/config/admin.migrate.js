@@ -150,7 +150,7 @@ async function runAdminMigrations() {
         customer_name VARCHAR(255),
         email VARCHAR(255) NOT NULL,
         country VARCHAR(100),
-        kyc_status ENUM('Pending', 'Approved', 'Rejected') NOT NULL DEFAULT 'Pending',
+        kyc_status ENUM('Not_Submitted', 'Pending', 'Approved', 'Rejected') NOT NULL DEFAULT 'Not_Submitted',
         aml_status ENUM('clear', 'review', 'blocked') NOT NULL DEFAULT 'review',
         full_kyc_details JSON,
         reviewed_by VARCHAR(36),
@@ -169,6 +169,15 @@ async function runAdminMigrations() {
       await db.promise().query(userDependentQueries[i])
       logAdminMigrate(`dependent query ${i + 1}/${userDependentQueries.length} executed`)
     }
+
+    // Ensure enum contains Not_Submitted for existing tables.
+    await db.promise().query(
+      `ALTER TABLE kyc_records
+       MODIFY COLUMN kyc_status
+       ENUM('Not_Submitted', 'Pending', 'Approved', 'Rejected')
+       NOT NULL DEFAULT 'Not_Submitted'`
+    )
+    logAdminMigrate('kyc_records.kyc_status enum ensured with Not_Submitted')
 
     const hasPasswordHash = await columnExists('admin_users', 'password_hash')
     if (!hasPasswordHash) {

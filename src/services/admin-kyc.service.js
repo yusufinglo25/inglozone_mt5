@@ -54,10 +54,18 @@ class AdminKYCService {
   }
 
   resolveKYCStatus(profileStatus, documentStatus) {
-    const statuses = [String(profileStatus || ''), String(documentStatus || '')].map((s) => s.toUpperCase())
+    const normalizedProfile = String(profileStatus || '').toUpperCase()
+    const normalizedDocument = String(documentStatus || '').toUpperCase()
+    const statuses = [normalizedProfile, normalizedDocument]
+
     if (statuses.includes('REJECTED')) return 'Rejected'
     if (statuses.includes('APPROVED')) return 'Approved'
-    return 'Pending'
+
+    const profileSubmitted = ['SUBMITTED', 'UNDER_REVIEW'].includes(normalizedProfile)
+    const documentSubmitted = ['PENDING', 'AUTO_VERIFIED'].includes(normalizedDocument)
+    if (profileSubmitted || documentSubmitted) return 'Pending'
+
+    return 'Not_Submitted'
   }
 
   async getAllKYCRecords() {
