@@ -140,6 +140,9 @@ function createWalletTables() {
         
         // Create KYC tables after wallet tables
         createKYCTables()
+
+        // Payment extension tables and columns (Razorpay + Bank Transfer)
+        runPaymentMigrations()
       }
     })
   })
@@ -781,6 +784,169 @@ function checkAndAddColumns(columns, index) {
       }
     }
   )
+}
+
+function runPaymentMigrations() {
+  console.log('Creating/updating payment extension tables...')
+
+  const paymentGatewayConfigTable = `
+    CREATE TABLE IF NOT EXISTS payment_gateway_configs (
+      id VARCHAR(36) PRIMARY KEY,
+      gateway_code ENUM('stripe', 'tamara', 'razorpay') NOT NULL UNIQUE,
+      is_enabled BOOLEAN DEFAULT false,
+      public_key VARCHAR(255) NULL,
+      secret_key_encrypted TEXT NULL,
+      secret_key_iv VARCHAR(64) NULL,
+      extra_config JSON NULL,
+      updated_by VARCHAR(36) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_gateway_enabled (is_enabled)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `
+
+  const bankAccountsTable = `
+    CREATE TABLE IF NOT EXISTS bank_accounts (
+      id VARCHAR(36) PRIMARY KEY,
+      country_code CHAR(2) NOT NULL UNIQUE,
+      is_enabled BOOLEAN DEFAULT true,
+      updated_by VARCHAR(36) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_bank_country_enabled (country_code, is_enabled)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `
+
+  const bankFieldsTable = `
+    CREATE TABLE IF NOT EXISTS bank_account_fields (
+      id VARCHAR(36) PRIMARY KEY,
+      bank_account_id VARCHAR(36) NOT NULL,
+      field_label VARCHAR(100) NOT NULL,
+      field_value_encrypted TEXT NOT NULL,
+      field_value_iv VARCHAR(64) NOT NULL,
+      display_order TINYINT NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_bank_account_fields_bank (bank_account_id),
+      CONSTRAINT fk_bank_account_fields_bank
+        FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `
+
+  const bankTransferProofsTable = `
+    CREATE TABLE IF NOT EXISTS bank_transfer_proofs (
+      id VARCHAR(36) PRIMARY KEY,
+      transaction_id VARCHAR(36) NOT NULL,
+      user_id VARCHAR(36) NOT NULL,
+      file_path VARCHAR(500) NOT NULL,
+      original_filename VARCHAR(255) NOT NULL,
+      mime_type VARCHAR(100) NULL,
+      file_size INT NULL,
+      sha256_hash VARCHAR(64) NOT NULL,
+      uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      deleted_at TIMESTAMP NULL,
+      UNIQUE KEY uk_bank_transfer_proof_transaction (transaction_id),
+      INDEX idx_bank_transfer_proof_user (user_id),
+      CONSTRAINT fk_bank_transfer_proof_tx
+        FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE,
+      CONSTRAINT fk_bank_transfer_proof_user
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `
+
+  db.query(paymentGatewayConfigTable, (err) => {
+    if (err) {
+      console.error('Error creating payment_gateway_configs:', err.message)
+      return
+    }
+    db.query(bankAccountsTable, (bankErr) => {
+      if (bankErr) {
+        console.error('Error creating bank_accounts:', bankErr.message)
+        return
+      }
+      db.query(bankFieldsTable, (fieldsErr) => {
+        if (fieldsErr) {
+          console.error('Error creating bank_account_fields:', fieldsErr.message)
+          return
+        }
+        db.query(bankTransferProofsTable, (proofErr) => {
+          if (proofErr) {
+            console.error('Error creating bank_transfer_proofs:', proofErr.message)
+            return
+          }
+          ensureTransactionPaymentColumns()
+        })
+      })
+    })
+  })
+}
+
+function ensureTransactionPaymentColumns() {
+  const transactionColumns = [
+    { name: 'payment_provider', type: "ENUM('stripe','tamara','razorpay','bank_transfer') NULL AFTER status" },
+    { name: 'payment_method', type: "ENUM('card','bnpl','bank_transfer') NULL AFTER payment_provider" },
+    { name: 'country_code', type: 'CHAR(2) NULL AFTER payment_method' },
+    { name: 'review_reason', type: 'TEXT NULL AFTER description' },
+    { name: 'reviewed_by', type: 'VARCHAR(36) NULL AFTER review_reason' },
+    { name: 'reviewed_at', type: 'TIMESTAMP NULL AFTER reviewed_by' }
+  ]
+
+  const next = (index) => {
+    if (index >= transactionColumns.length) {
+      db.query(
+        `ALTER TABLE transactions
+         MODIFY COLUMN status ENUM(
+           'pending','completed','failed','cancelled',
+           'Pending','Reviewing','Approved','Rejected'
+         ) DEFAULT 'Pending'`,
+        (enumErr) => {
+          if (enumErr) {
+            console.error('Error updating transactions.status enum:', enumErr.message)
+          } else {
+            db.query(
+              `CREATE INDEX idx_transactions_provider_status
+               ON transactions (payment_provider, status, created_at)`,
+              () => {}
+            )
+            console.log('Payment transaction columns verified')
+          }
+        }
+      )
+      return
+    }
+
+    const column = transactionColumns[index]
+    db.query(
+      `SELECT COUNT(*) AS exists_flag
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'transactions'
+         AND COLUMN_NAME = ?`,
+      [column.name],
+      (err, rows) => {
+        if (err) {
+          console.error(`Error checking transactions column ${column.name}:`, err.message)
+          next(index + 1)
+          return
+        }
+        if (rows[0].exists_flag > 0) {
+          next(index + 1)
+          return
+        }
+        db.query(
+          `ALTER TABLE transactions ADD COLUMN ${column.name} ${column.type}`,
+          (alterErr) => {
+            if (alterErr) {
+              console.error(`Error adding transactions column ${column.name}:`, alterErr.message)
+            }
+            next(index + 1)
+          }
+        )
+      }
+    )
+  }
+
+  next(0)
 }
 
 module.exports = runMigrations

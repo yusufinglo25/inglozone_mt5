@@ -113,7 +113,7 @@ app.use(express.urlencoded({ extended: true }))
 
 // Regular JSON parsing for all routes except webhooks
 app.use((req, res, next) => {
-  if (req.originalUrl === '/api/webhooks/stripe-webhook') {
+  if (req.originalUrl === '/api/webhooks/stripe-webhook' || req.originalUrl === '/api/webhooks/razorpay-webhook') {
     next()
   } else {
     express.json()(req, res, next)

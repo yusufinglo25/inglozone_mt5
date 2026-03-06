@@ -13,6 +13,7 @@
  *   - name: Admin - Users
  *   - name: Admin - Compliance
  *   - name: Admin - Dashboard
+ *   - name: Admin - Payments
  */
 
 /**
@@ -1405,4 +1406,312 @@
  *                 transactionId: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
  *                 orderId: ord_123
  *                 status: approved
+ */
+
+/**
+ * @swagger
+ * /api/wallet/payment-methods:
+ *   get:
+ *     tags: [Customer - Wallet]
+ *     summary: Get payment methods for current user based on detected country
+ *     responses:
+ *       200:
+ *         description: Payment methods list
+ */
+
+/**
+ * @swagger
+ * /api/wallet/razorpay/deposit:
+ *   post:
+ *     tags: [Customer - Wallet]
+ *     summary: Create Razorpay order for India users
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [amount]
+ *             properties:
+ *               amount:
+ *                 type: number
+ *                 example: 5000
+ *                 description: Amount in INR
+ *     responses:
+ *       200:
+ *         description: Razorpay order created
+ */
+
+/**
+ * @swagger
+ * /api/wallet/razorpay/deposit/verify:
+ *   post:
+ *     tags: [Customer - Wallet]
+ *     summary: Verify Razorpay payment and credit wallet
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [razorpay_order_id, razorpay_payment_id, razorpay_signature]
+ *             properties:
+ *               razorpay_order_id:
+ *                 type: string
+ *               razorpay_payment_id:
+ *                 type: string
+ *               razorpay_signature:
+ *                 type: string
+ *               transaction_id:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Razorpay payment verified
+ */
+
+/**
+ * @swagger
+ * /api/wallet/bank-transfer/deposit:
+ *   post:
+ *     tags: [Customer - Wallet]
+ *     summary: Create bank transfer wallet transaction (Pending)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [amount]
+ *             properties:
+ *               amount:
+ *                 type: number
+ *                 example: 250
+ *     responses:
+ *       200:
+ *         description: Bank transfer transaction created
+ */
+
+/**
+ * @swagger
+ * /api/wallet/bank-transfer/bank-details:
+ *   get:
+ *     tags: [Customer - Wallet]
+ *     summary: Get country-specific bank transfer details
+ *     responses:
+ *       200:
+ *         description: Bank details fetched
+ */
+
+/**
+ * @swagger
+ * /api/wallet/bank-transfer/{transactionId}/proof:
+ *   post:
+ *     tags: [Customer - Wallet]
+ *     summary: Upload bank transfer proof for a pending transaction (single upload only)
+ *     parameters:
+ *       - in: path
+ *         name: transactionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [document]
+ *             properties:
+ *               document:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Proof uploaded and status moved to Reviewing
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/gateways:
+ *   get:
+ *     tags: [Admin - Payments]
+ *     summary: Get payment gateway configurations (secrets masked)
+ *     responses:
+ *       200:
+ *         description: Gateway configurations fetched
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/gateways/{gatewayCode}:
+ *   patch:
+ *     tags: [Admin - Payments]
+ *     summary: Update payment gateway configuration
+ *     parameters:
+ *       - in: path
+ *         name: gatewayCode
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [stripe, tamara, razorpay]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               isEnabled:
+ *                 type: boolean
+ *               publicKey:
+ *                 type: string
+ *               secretKey:
+ *                 type: string
+ *               extraConfig:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Gateway updated
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/bank-accounts:
+ *   get:
+ *     tags: [Admin - Payments]
+ *     summary: Get bank account configurations by country
+ *     responses:
+ *       200:
+ *         description: Bank accounts fetched
+ *   post:
+ *     tags: [Admin - Payments]
+ *     summary: Create bank account configuration
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [countryCode, fields]
+ *             properties:
+ *               countryCode:
+ *                 type: string
+ *                 example: IN
+ *               isEnabled:
+ *                 type: boolean
+ *               fields:
+ *                 type: array
+ *                 maxItems: 6
+ *                 items:
+ *                   type: object
+ *                   required: [label, value]
+ *                   properties:
+ *                     label:
+ *                       type: string
+ *                     value:
+ *                       type: string
+ *     responses:
+ *       200:
+ *         description: Bank account saved
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/bank-accounts/{bankAccountId}:
+ *   patch:
+ *     tags: [Admin - Payments]
+ *     summary: Update bank account configuration
+ *     parameters:
+ *       - in: path
+ *         name: bankAccountId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Bank account updated
+ *   delete:
+ *     tags: [Admin - Payments]
+ *     summary: Delete bank account configuration
+ *     parameters:
+ *       - in: path
+ *         name: bankAccountId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Bank account deleted
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/bank-transfers:
+ *   get:
+ *     tags: [Admin - Payments]
+ *     summary: List bank transfer transactions in Reviewing status
+ *     responses:
+ *       200:
+ *         description: Bank transfer queue fetched
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/bank-transfers/{transactionId}:
+ *   get:
+ *     tags: [Admin - Payments]
+ *     summary: Get single bank transfer transaction details
+ *     parameters:
+ *       - in: path
+ *         name: transactionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Bank transfer details fetched
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/bank-transfers/{transactionId}/approve:
+ *   post:
+ *     tags: [Admin - Payments]
+ *     summary: Approve bank transfer and credit wallet
+ *     parameters:
+ *       - in: path
+ *         name: transactionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Bank transfer approved
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/bank-transfers/{transactionId}/reject:
+ *   post:
+ *     tags: [Admin - Payments]
+ *     summary: Reject bank transfer, store reason, and delete uploaded proof
+ *     parameters:
+ *       - in: path
+ *         name: transactionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Bank transfer rejected
  */

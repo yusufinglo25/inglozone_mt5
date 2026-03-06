@@ -55,10 +55,10 @@ async function handleCheckoutSessionCompleted(session) {
     // Update transaction status
     db.query(
       `UPDATE transactions 
-       SET status = 'completed', 
+       SET status = 'Approved', 
            stripe_payment_id = ?,
            updated_at = NOW()
-       WHERE id = ? AND status = 'pending'`,
+       WHERE id = ? AND status IN ('pending','Pending')`,
       [session.payment_intent, transactionId],
       (err, result) => {
         if (err) {
@@ -116,7 +116,7 @@ async function handlePaymentIntentFailed(paymentIntent) {
   // Update any related transaction to failed status
   db.query(
     `UPDATE transactions 
-     SET status = 'failed', 
+     SET status = 'Rejected', 
          updated_at = NOW()
      WHERE stripe_payment_id = ?`,
     [paymentIntent.id],
@@ -136,6 +136,69 @@ router.post('/tamara-webhook', async (req, res) => {
   } catch (error) {
     console.error('Tamara webhook error:', error.message)
     res.status(400).json({ error: error.message })
+  }
+})
+
+router.post('/razorpay-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  try {
+    const gateway = await walletService.getGatewayConfig('razorpay')
+    const secret = gateway.secretKey || process.env.RAZORPAY_WEBHOOK_SECRET || null
+    if (!secret) {
+      return res.status(400).json({ error: 'Razorpay webhook secret not configured' })
+    }
+
+    const signature = req.headers['x-razorpay-signature']
+    if (!signature) {
+      return res.status(400).json({ error: 'Missing Razorpay signature' })
+    }
+
+    const bodyBuffer = req.body
+    const computed = require('crypto')
+      .createHmac('sha256', secret)
+      .update(bodyBuffer)
+      .digest('hex')
+
+    if (computed !== signature) {
+      return res.status(400).json({ error: 'Invalid Razorpay signature' })
+    }
+
+    const payload = JSON.parse(Buffer.isBuffer(bodyBuffer) ? bodyBuffer.toString('utf8') : '{}')
+    const eventType = String(payload.event || '').toLowerCase()
+    const entity = payload?.payload?.payment?.entity || payload?.payload?.order?.entity || {}
+    const orderId = entity.order_id || entity.id
+    const paymentId = entity.id && entity.order_id ? entity.id : null
+
+    if (!orderId) {
+      return res.json({ received: true, skipped: true, reason: 'No order id' })
+    }
+
+    const [rows] = await db.promise().query(
+      `SELECT id
+       FROM transactions
+       WHERE payment_provider = 'razorpay'
+         AND (stripe_payment_id = ? OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.razorpayOrderId')) = ?)
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [orderId, orderId]
+    )
+
+    if (rows.length === 0) {
+      return res.json({ received: true, skipped: true, reason: 'No transaction found' })
+    }
+
+    if (eventType.includes('captured') || eventType.includes('authorized')) {
+      await walletService.markTransactionCompleted(rows[0].id, paymentId || orderId)
+    } else if (eventType.includes('failed')) {
+      await db.promise().query(
+        `UPDATE transactions SET status = 'Rejected', updated_at = NOW() WHERE id = ?`,
+        [rows[0].id]
+      )
+    }
+
+    return res.json({ received: true })
+  } catch (error) {
+    console.error('Razorpay webhook error:', error.message)
+    return res.status(400).json({ error: error.message })
   }
 })
 

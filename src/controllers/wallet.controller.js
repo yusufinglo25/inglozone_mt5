@@ -17,6 +17,19 @@ exports.getWallet = async (req, res) => {
   }
 }
 
+exports.getPaymentMethods = async (req, res) => {
+  try {
+    const userId = req.user.id
+    const data = await walletService.getPaymentMethods(userId)
+    res.json({ success: true, data })
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
 exports.createDeposit = async (req, res) => {
   try {
     const userId = req.user.id
@@ -108,6 +121,102 @@ exports.verifyTamaraDeposit = async (req, res) => {
       success: true,
       data: result
     })
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
+exports.createRazorpayDeposit = async (req, res) => {
+  try {
+    const userId = req.user.id
+    const { amount } = req.body
+
+    if (!amount || isNaN(amount) || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid amount is required'
+      })
+    }
+
+    const data = await walletService.createRazorpayDepositIntent(userId, parseFloat(amount))
+    res.json({ success: true, data })
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
+exports.verifyRazorpayDeposit = async (req, res) => {
+  try {
+    const userId = req.user.id
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, transaction_id } = req.body
+    const data = await walletService.verifyRazorpayDeposit({
+      userId,
+      razorpayOrderId: razorpay_order_id,
+      razorpayPaymentId: razorpay_payment_id,
+      razorpaySignature: razorpay_signature,
+      transactionId: transaction_id
+    })
+    res.json({ success: true, data })
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
+exports.createBankTransferDeposit = async (req, res) => {
+  try {
+    const userId = req.user.id
+    const { amount } = req.body
+    if (!amount || isNaN(amount) || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid amount is required'
+      })
+    }
+    const data = await walletService.createBankTransferDepositIntent(userId, parseFloat(amount))
+    res.json({ success: true, data })
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
+exports.getBankTransferDetails = async (req, res) => {
+  try {
+    const userId = req.user.id
+    const data = await walletService.getBankTransferDetailsForUser(userId)
+    res.json({ success: true, data })
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
+exports.uploadBankTransferProof = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No file uploaded' })
+    }
+    const userId = req.user.id
+    const { transactionId } = req.params
+    const data = await walletService.uploadBankTransferProof({
+      userId,
+      transactionId,
+      file: req.file
+    })
+    res.json({ success: true, data })
   } catch (error) {
     res.status(400).json({
       success: false,
