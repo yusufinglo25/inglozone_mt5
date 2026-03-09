@@ -1,7 +1,7 @@
 const passport = require('passport')
 const GoogleStrategy = require('passport-google-oauth20').Strategy
 const db = require('./db')
-const { v4: uuidv4 } = require('uuid')
+const { getNextUserId } = require('../utils/id-generator')
 
 passport.use(
   new GoogleStrategy(
@@ -94,7 +94,7 @@ passport.use(
                   )
                 } else {
                   // Create new user with Google OAuth
-                  const id = uuidv4()
+                  const id = await getNextUserId(db)
                   
                   db.query(
                     `INSERT INTO users (

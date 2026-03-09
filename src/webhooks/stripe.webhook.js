@@ -53,12 +53,12 @@ async function handleCheckoutSessionCompleted(session) {
     }
 
     // Update transaction status
-    db.query(
-      `UPDATE transactions 
-       SET status = 'Approved', 
-           stripe_payment_id = ?,
-           updated_at = NOW()
-       WHERE id = ? AND status IN ('pending','Pending')`,
+     db.query(
+       `UPDATE transactions 
+        SET status = 'Approved', 
+            payment_id = ?,
+            updated_at = NOW()
+        WHERE id = ? AND status IN ('pending','Pending')`,
       [session.payment_intent, transactionId],
       (err, result) => {
         if (err) {
@@ -115,10 +115,10 @@ async function handlePaymentIntentFailed(paymentIntent) {
   
   // Update any related transaction to failed status
   db.query(
-    `UPDATE transactions 
-     SET status = 'Rejected', 
-         updated_at = NOW()
-     WHERE stripe_payment_id = ?`,
+     `UPDATE transactions 
+      SET status = 'Rejected', 
+          updated_at = NOW()
+     WHERE payment_id = ?`,
     [paymentIntent.id],
     (err) => {
       if (err) {
@@ -174,11 +174,11 @@ router.post('/razorpay-webhook', express.raw({ type: 'application/json' }), asyn
 
     const [rows] = await db.promise().query(
       `SELECT id
-       FROM transactions
-       WHERE payment_provider = 'razorpay'
-         AND (stripe_payment_id = ? OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.razorpayOrderId')) = ?)
-       ORDER BY created_at DESC
-       LIMIT 1`,
+        FROM transactions
+        WHERE payment_provider = 'razorpay'
+         AND (payment_id = ? OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.razorpayOrderId')) = ?)
+        ORDER BY created_at DESC
+        LIMIT 1`,
       [orderId, orderId]
     )
 

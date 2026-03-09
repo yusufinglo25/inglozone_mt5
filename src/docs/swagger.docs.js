@@ -671,7 +671,7 @@
  *               message: Account created successfully!
  *               token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
  *               user:
- *                 id: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
+ *                 id: 25110
  *                 email: user@example.com
  *                 firstName: John
  *                 lastName: Doe
@@ -744,7 +744,7 @@
  *             example:
  *               token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
  *               user:
- *                 id: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
+ *                 id: 25110
  *                 email: user@example.com
  *                 firstName: John
  *                 lastName: Doe
@@ -868,7 +868,7 @@
  *             example:
  *               authenticated: true
  *               user:
- *                 id: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
+ *                 id: 25110
  *                 email: user@example.com
  *                 iat: 1739500000
  *                 exp: 1739600000
@@ -975,7 +975,7 @@
  *                 url: https://checkout.stripe.com/c/pay/cs_test_123
  *                 amountUSD: 100
  *                 amountAED: 366
- *                 transactionId: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
+ *                 transactionId: ING000000000001
  *       400:
  *         description: Validation or business-rule error
  *         content:
@@ -1060,8 +1060,8 @@
  *             example:
  *               success: true
  *               wallet:
- *                 id: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
- *                 user_id: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
+ *                 id: 25110
+ *                 user_id: 25110
  *                 balance: 1500
  *                 currency: USD
  *                 available_balance: 1500
@@ -1263,7 +1263,7 @@
  *       properties:
  *         userId:
  *           type: string
- *           format: uuid
+ *           example: 25110
  *           description: Optional. If provided, must match authenticated user.
  *         firstName:
  *           type: string
@@ -1312,7 +1312,7 @@
  *       properties:
  *         session_id:
  *           type: string
- *           description: Stripe checkout session id.
+ *           description: Payment gateway session id.
  *           example: cs_test_123
  *
  *     KycUploadRequest:
@@ -1366,7 +1366,7 @@
  *               success: true
  *               data:
  *                 provider: tamara
- *                 transactionId: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
+ *                 transactionId: ING000000000001
  *                 orderId: ord_123
  *                 checkoutId: chk_123
  *                 checkoutUrl: https://checkout.tamara.co/...
@@ -1393,7 +1393,7 @@
  *                 example: ord_123
  *               transaction_id:
  *                 type: string
- *                 example: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
+ *                 example: ING000000000001
  *     responses:
  *       200:
  *         description: Verification result
@@ -1403,7 +1403,7 @@
  *               success: true
  *               data:
  *                 success: true
- *                 transactionId: 0d95e2f8-fc73-4ffa-bef4-9d8a3a6c6f9f
+ *                 transactionId: ING000000000001
  *                 orderId: ord_123
  *                 status: approved
  */

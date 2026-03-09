@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken')
 const crypto = require('crypto')
 const path = require('path')
 const fs = require('fs')
+const { generateUniqueTransactionId } = require('../utils/id-generator')
 
 class WalletService {
   constructor() {
@@ -192,7 +193,7 @@ class WalletService {
       db.query(
         `UPDATE transactions
          SET status = 'Approved',
-             stripe_payment_id = COALESCE(?, stripe_payment_id),
+             payment_id = COALESCE(?, payment_id),
              updated_at = NOW()
          WHERE id = ?`,
         [externalPaymentId, transactionId],
@@ -247,7 +248,7 @@ class WalletService {
 
   // Create wallet for user
   async createWallet(userId) {
-    const walletId = uuidv4()
+    const walletId = String(userId)
     
     return new Promise((resolve, reject) => {
       db.query(
@@ -299,7 +300,7 @@ class WalletService {
       })
 
       // Create transaction record
-      const transactionId = uuidv4()
+      const transactionId = await generateUniqueTransactionId(db)
       const wallet = await this.getWallet(userId)
       
       await new Promise((resolve, reject) => {
@@ -340,10 +341,10 @@ class WalletService {
         }
       })
 
-      // Update transaction with Stripe session ID
+      // Update transaction with gateway session ID
       await new Promise((resolve, reject) => {
         db.query(
-          `UPDATE transactions SET stripe_session_id = ? WHERE id = ?`,
+          `UPDATE transactions SET session_id = ? WHERE id = ?`,
           [session.id, transactionId],
           (err) => {
             if (err) return reject(err)
@@ -376,7 +377,7 @@ class WalletService {
       // Find transaction
       const transaction = await new Promise((resolve, reject) => {
         db.query(
-          `SELECT * FROM transactions WHERE stripe_session_id = ?`,
+          `SELECT * FROM transactions WHERE session_id = ?`,
           [sessionId],
           (err, results) => {
             if (err || results.length === 0) return reject(new Error('Transaction not found'))
@@ -396,7 +397,7 @@ class WalletService {
           db.query(
             `UPDATE transactions 
              SET status = 'Approved', 
-                 stripe_payment_id = ?,
+                 payment_id = ?,
                  updated_at = NOW()
              WHERE id = ?`,
             [session.payment_intent.id, transaction.id],
@@ -479,7 +480,7 @@ class WalletService {
     })
 
     const wallet = await this.getWallet(userId)
-    const transactionId = uuidv4()
+    const transactionId = await generateUniqueTransactionId(db)
 
     await new Promise((resolve, reject) => {
       db.query(
@@ -757,7 +758,7 @@ class WalletService {
     }
 
     const wallet = await this.getWallet(userId)
-    const transactionId = uuidv4()
+    const transactionId = await generateUniqueTransactionId(db)
     const amountUSD = parseFloat((amount / (parseFloat(process.env.INR_TO_USD_RATE || '83.5'))).toFixed(2))
 
     await db.promise().query(
@@ -798,7 +799,7 @@ class WalletService {
 
     await db.promise().query(
       `UPDATE transactions
-       SET stripe_payment_id = ?, metadata = JSON_SET(COALESCE(metadata, JSON_OBJECT()), '$.razorpayOrderId', ?), updated_at = NOW()
+       SET payment_id = ?, metadata = JSON_SET(COALESCE(metadata, JSON_OBJECT()), '$.razorpayOrderId', ?), updated_at = NOW()
        WHERE id = ?`,
       [data.id, data.id, transactionId]
     )
@@ -836,7 +837,7 @@ class WalletService {
         `SELECT id FROM transactions
          WHERE user_id = ?
            AND payment_provider = 'razorpay'
-           AND (stripe_payment_id = ? OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.razorpayOrderId')) = ?)
+           AND (payment_id = ? OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.razorpayOrderId')) = ?)
          ORDER BY created_at DESC
          LIMIT 1`,
         [userId, razorpayOrderId, razorpayOrderId]
@@ -911,7 +912,7 @@ class WalletService {
     }
 
     const wallet = await this.getWallet(userId)
-    const transactionId = uuidv4()
+    const transactionId = await generateUniqueTransactionId(db)
 
     await db.promise().query(
       `INSERT INTO transactions
@@ -1079,7 +1080,7 @@ async handleWebhookEvent(event) {
           db.query(
             `UPDATE transactions 
              SET status = 'Approved', 
-                 stripe_payment_id = ?,
+                 payment_id = ?,
                  updated_at = NOW()
              WHERE id = ?`,
             [session.payment_intent, transactionId],

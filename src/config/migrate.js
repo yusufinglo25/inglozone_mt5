@@ -107,8 +107,8 @@ function createWalletTables() {
       amount DECIMAL(15, 2) NOT NULL,
       currency VARCHAR(10) DEFAULT 'USD',
       status ENUM('pending', 'completed', 'failed', 'cancelled') DEFAULT 'pending',
-      stripe_payment_id VARCHAR(255),
-      stripe_session_id VARCHAR(255),
+      payment_id VARCHAR(255),
+      session_id VARCHAR(255),
       description TEXT,
       metadata JSON,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -116,7 +116,7 @@ function createWalletTables() {
       INDEX idx_user_id (user_id),
       INDEX idx_status (status),
       INDEX idx_type (type),
-      INDEX idx_stripe_id (stripe_payment_id)
+      INDEX idx_payment_id (payment_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `
   
@@ -734,15 +734,17 @@ function checkAndAddColumns(columns, index) {
   if (index >= columns.length) {
     console.log('✅ All user table columns verified')
     
-    // Clean up expired OTPs
-    setTimeout(() => {
-      db.query('DELETE FROM otp_verifications WHERE expires_at < NOW()', (err) => {
-        if (err) console.error('Error cleaning expired OTPs:', err.message)
-        else console.log('✅ Expired OTPs cleaned up')
-        
-        console.log('🎉 All migrations completed successfully!')
-      })
-    }, 1000)
+    normalizeUserAndWalletIds(() => {
+      // Clean up expired OTPs
+      setTimeout(() => {
+        db.query('DELETE FROM otp_verifications WHERE expires_at < NOW()', (err) => {
+          if (err) console.error('Error cleaning expired OTPs:', err.message)
+          else console.log('✅ Expired OTPs cleaned up')
+
+          console.log('🎉 All migrations completed successfully!')
+        })
+      }, 1000)
+    })
     
     return
   }
@@ -883,6 +885,8 @@ function runPaymentMigrations() {
 
 function ensureTransactionPaymentColumns() {
   const transactionColumns = [
+    { name: 'payment_id', type: 'VARCHAR(255) NULL AFTER status' },
+    { name: 'session_id', type: 'VARCHAR(255) NULL AFTER payment_id' },
     { name: 'payment_provider', type: "ENUM('stripe','tamara','razorpay','bank_transfer') NULL AFTER status" },
     { name: 'payment_method', type: "ENUM('card','bnpl','bank_transfer') NULL AFTER payment_provider" },
     { name: 'country_code', type: 'CHAR(2) NULL AFTER payment_method' },
@@ -893,6 +897,13 @@ function ensureTransactionPaymentColumns() {
 
   const next = (index) => {
     if (index >= transactionColumns.length) {
+      db.query(
+        `UPDATE transactions
+         SET payment_id = COALESCE(payment_id, stripe_payment_id),
+             session_id = COALESCE(session_id, stripe_session_id)`,
+        () => {}
+      )
+
       db.query(
         `ALTER TABLE transactions
          MODIFY COLUMN status ENUM(
@@ -906,6 +917,11 @@ function ensureTransactionPaymentColumns() {
             db.query(
               `CREATE INDEX idx_transactions_provider_status
                ON transactions (payment_provider, status, created_at)`,
+              () => {}
+            )
+            db.query(
+              `CREATE INDEX idx_transactions_payment_id
+               ON transactions (payment_id)`,
               () => {}
             )
             console.log('Payment transaction columns verified')
@@ -949,4 +965,99 @@ function ensureTransactionPaymentColumns() {
   next(0)
 }
 
+function normalizeUserAndWalletIds(done = () => {}) {
+  ;(async () => {
+    try {
+      const [users] = await db.promise().query(
+        `SELECT id, created_at
+         FROM users
+         ORDER BY created_at ASC, id ASC`
+      )
+
+      if (!users.length) {
+        done()
+        return
+      }
+
+      const base = 25110
+      const map = users.map((user, index) => ({
+        oldId: String(user.id),
+        newId: String(base + index)
+      }))
+      const changed = map.filter((item) => item.oldId !== item.newId)
+
+      await db.promise().query('SET FOREIGN_KEY_CHECKS = 0')
+
+      if (changed.length > 0) {
+        const inClause = changed.map((item) => db.escape(item.oldId)).join(', ')
+        const caseExpr = changed
+          .map((item) => `WHEN ${db.escape(item.oldId)} THEN ${db.escape(item.newId)}`)
+          .join(' ')
+
+        const [userIdColumns] = await db.promise().query(
+          `SELECT DISTINCT TABLE_NAME
+           FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND COLUMN_NAME = 'user_id'`
+        )
+
+        for (const row of userIdColumns) {
+          const tableName = row.TABLE_NAME
+          if (!tableName || tableName === 'users') continue
+          await db.promise().query(
+            `UPDATE \`${tableName}\`
+             SET user_id = CASE user_id ${caseExpr} ELSE user_id END
+             WHERE user_id IN (${inClause})`
+          )
+        }
+
+        const [reviewedByColumns] = await db.promise().query(
+          `SELECT DISTINCT TABLE_NAME
+           FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND COLUMN_NAME = 'reviewed_by'`
+        )
+
+        for (const row of reviewedByColumns) {
+          const tableName = row.TABLE_NAME
+          if (!tableName || tableName === 'users') continue
+          await db.promise().query(
+            `UPDATE \`${tableName}\`
+             SET reviewed_by = CASE reviewed_by ${caseExpr} ELSE reviewed_by END
+             WHERE reviewed_by IN (${inClause})`
+          )
+        }
+
+        await db.promise().query(
+          `UPDATE users
+           SET id = CASE id ${caseExpr} ELSE id END
+           WHERE id IN (${inClause})`
+        )
+      }
+
+      await db.promise().query(
+        `UPDATE wallets
+         SET id = user_id
+         WHERE id <> user_id`
+      )
+
+      await db.promise().query(
+        `UPDATE transactions t
+         JOIN wallets w ON w.user_id = t.user_id
+         SET t.wallet_id = w.id
+         WHERE t.wallet_id IS NULL OR t.wallet_id <> w.id`
+      )
+
+      await db.promise().query('SET FOREIGN_KEY_CHECKS = 1')
+      console.log('User and wallet IDs normalized')
+      done()
+    } catch (error) {
+      db.promise().query('SET FOREIGN_KEY_CHECKS = 1').catch(() => {})
+      console.error('Error normalizing user/wallet IDs:', error.message)
+      done()
+    }
+  })()
+}
+
 module.exports = runMigrations
+

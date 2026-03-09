@@ -1,7 +1,7 @@
 const db = require('../config/db')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
-const { v4: uuidv4 } = require('uuid')
+const { getNextUserId } = require('../utils/id-generator')
 
 exports.register = async (data) => {
   const { firstName, lastName, email, password } = data
@@ -23,7 +23,7 @@ exports.register = async (data) => {
   }
 
   const hash = await bcrypt.hash(password, 10)
-  const id = uuidv4()
+  const id = await getNextUserId(db)
 
   return new Promise((resolve, reject) => {
     db.query(
@@ -171,7 +171,7 @@ exports.findOrCreateGoogleUser = async (profile) => {
             }
             
             // Create new user with Google OAuth
-            const userId = uuidv4()
+            const userId = await getNextUserId(db)
             
             db.query(
               `INSERT INTO users (

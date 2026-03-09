@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken')
 const speakeasy = require('speakeasy')
 const { v4: uuidv4 } = require('uuid')
 const emailService = require('./email.service')
+const { getNextUserId } = require('../utils/id-generator')
 
 function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex')
@@ -56,7 +57,7 @@ exports.register = async (data) => {
   }
 
   const hash = await bcrypt.hash(password, 10)
-  const id = uuidv4()
+  const id = await getNextUserId(db)
 
   return new Promise((resolve, reject) => {
     db.query(
@@ -248,7 +249,7 @@ exports.verifyRegistrationOTP = async (tempToken, otpCode, sessionMeta = {}) => 
       throw new Error(`Invalid OTP. ${attemptsLeft} attempt(s) remaining.`)
     }
 
-    const userId = uuidv4()
+    const userId = await getNextUserId(db)
     await new Promise((resolve, reject) => {
       db.query(
         `INSERT INTO users (
