@@ -1,4 +1,7 @@
 const db = require('./db')
+const {
+  generateUniqueTransactionNumber
+} = require('../utils/id-generator')
 
 const runMigrations = () => {
   console.log('Starting database migrations...')
@@ -13,6 +16,7 @@ const runMigrations = () => {
       password_hash VARCHAR(255),
       mobile VARCHAR(20),
       google_id VARCHAR(255),
+      account_type ENUM('trader','investor') NOT NULL DEFAULT 'trader',
       is_2fa_enabled BOOLEAN DEFAULT false,
       profile_completed BOOLEAN DEFAULT false,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -101,6 +105,7 @@ function createWalletTables() {
   const transactionsTable = `
     CREATE TABLE IF NOT EXISTS transactions (
       id VARCHAR(36) PRIMARY KEY,
+      transaction_number VARCHAR(15) NULL,
       user_id VARCHAR(36) NOT NULL,
       wallet_id VARCHAR(36),
       type ENUM('deposit', 'withdrawal', 'trade_profit', 'trade_loss', 'bonus', 'fee') NOT NULL,
@@ -114,6 +119,7 @@ function createWalletTables() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       INDEX idx_user_id (user_id),
+      UNIQUE KEY uk_transaction_number (transaction_number),
       INDEX idx_status (status),
       INDEX idx_type (type),
       INDEX idx_payment_id (payment_id)
@@ -143,6 +149,7 @@ function createWalletTables() {
 
         // Payment extension tables and columns (Razorpay + Bank Transfer)
         runPaymentMigrations()
+        runInvestorMigrations()
       }
     })
   })
@@ -233,6 +240,7 @@ function addForeignKeys() {
       { name: 'password_set', type: 'BOOLEAN DEFAULT true' },
       { name: 'avatar_url', type: 'VARCHAR(500) DEFAULT NULL' },
       { name: 'provider', type: 'VARCHAR(50) DEFAULT "local"' },
+      { name: 'account_type', type: 'ENUM("trader","investor") NOT NULL DEFAULT "trader"' },
       { name: 'email_verified', type: 'BOOLEAN DEFAULT false' },
       { name: 'verified_at', type: 'TIMESTAMP DEFAULT NULL' }
     ]
@@ -734,7 +742,7 @@ function checkAndAddColumns(columns, index) {
   if (index >= columns.length) {
     console.log('✅ All user table columns verified')
     
-    normalizeUserAndWalletIds(() => {
+    runPostUserMigrations(() => {
       // Clean up expired OTPs
       setTimeout(() => {
         db.query('DELETE FROM otp_verifications WHERE expires_at < NOW()', (err) => {
@@ -885,6 +893,7 @@ function runPaymentMigrations() {
 
 function ensureTransactionPaymentColumns() {
   const transactionColumns = [
+    { name: 'transaction_number', type: 'VARCHAR(15) NULL AFTER id' },
     { name: 'payment_id', type: 'VARCHAR(255) NULL AFTER status' },
     { name: 'session_id', type: 'VARCHAR(255) NULL AFTER payment_id' },
     { name: 'payment_provider', type: "ENUM('stripe','tamara','razorpay','bank_transfer') NULL AFTER status" },
@@ -897,12 +906,7 @@ function ensureTransactionPaymentColumns() {
 
   const next = (index) => {
     if (index >= transactionColumns.length) {
-      db.query(
-        `UPDATE transactions
-         SET payment_id = COALESCE(payment_id, stripe_payment_id),
-             session_id = COALESCE(session_id, stripe_session_id)`,
-        () => {}
-      )
+      backfillLegacyGatewayColumns()
 
       db.query(
         `ALTER TABLE transactions
@@ -922,6 +926,11 @@ function ensureTransactionPaymentColumns() {
             db.query(
               `CREATE INDEX idx_transactions_payment_id
                ON transactions (payment_id)`,
+              () => {}
+            )
+            db.query(
+              `CREATE UNIQUE INDEX uk_transactions_transaction_number
+               ON transactions (transaction_number)`,
               () => {}
             )
             console.log('Payment transaction columns verified')
@@ -1057,6 +1066,143 @@ function normalizeUserAndWalletIds(done = () => {}) {
       done()
     }
   })()
+}
+
+function runInvestorMigrations() {
+  const investorAccountsTable = `
+    CREATE TABLE IF NOT EXISTS investor_accounts (
+      id VARCHAR(36) PRIMARY KEY,
+      user_id VARCHAR(36) NOT NULL UNIQUE,
+      account_status ENUM('pending','active','inactive','rejected') NOT NULL DEFAULT 'pending',
+      balance DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+      equity DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+      floating_profit_loss DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+      total_profit_loss DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+      approved_at TIMESTAMP NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_investor_status (account_status),
+      CONSTRAINT fk_investor_account_user
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `
+
+  db.query(investorAccountsTable, (err) => {
+    if (err) {
+      console.error('Error creating investor_accounts:', err.message)
+    } else {
+      console.log('Investor accounts table verified')
+    }
+  })
+}
+
+function runPostUserMigrations(done = () => {}) {
+  normalizeUserAndWalletIds(async () => {
+    try {
+      await ensureMigrationRunsTable()
+      await runOneTimeMigration('existing_users_set_account_type_trader_v1', async () => {
+        await db.promise().query(
+          `UPDATE users
+           SET account_type = 'trader'
+           WHERE account_type IS NULL
+              OR account_type = ''
+              OR account_type NOT IN ('trader', 'investor')`
+        )
+      })
+      await runOneTimeMigration('transactions_backfill_transaction_number_v1', backfillTransactionNumbersOnce)
+    } catch (error) {
+      console.error('Error in post-user migrations:', error.message)
+    }
+    done()
+  })
+}
+
+async function ensureMigrationRunsTable() {
+  await db.promise().query(
+    `CREATE TABLE IF NOT EXISTS migration_runs (
+      migration_key VARCHAR(128) PRIMARY KEY,
+      executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  )
+}
+
+async function runOneTimeMigration(migrationKey, handler) {
+  const [rows] = await db.promise().query(
+    `SELECT migration_key FROM migration_runs WHERE migration_key = ? LIMIT 1`,
+    [migrationKey]
+  )
+  if (rows.length > 0) return
+
+  await handler()
+  await db.promise().query(
+    `INSERT INTO migration_runs (migration_key) VALUES (?)`,
+    [migrationKey]
+  )
+  console.log(`One-time migration completed: ${migrationKey}`)
+}
+
+async function backfillTransactionNumbersOnce() {
+  const [columnRows] = await db.promise().query(
+    `SELECT COUNT(*) AS exists_flag
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'transactions'
+       AND COLUMN_NAME = 'transaction_number'`
+  )
+  if (Number(columnRows[0]?.exists_flag || 0) === 0) {
+    await db.promise().query(
+      `ALTER TABLE transactions ADD COLUMN transaction_number VARCHAR(15) NULL AFTER id`
+    )
+  }
+
+  const [rows] = await db.promise().query(
+    `SELECT id, transaction_number
+     FROM transactions
+     WHERE transaction_number IS NULL
+        OR transaction_number = ''
+        OR transaction_number NOT REGEXP '^ING[0-9]{12}$'`
+  )
+
+  for (const row of rows) {
+    const idValue = String(row.id || '')
+    const fallbackFromId = /^ING[0-9]{12}$/.test(idValue) ? idValue : null
+    const transactionNumber = fallbackFromId || await generateUniqueTransactionNumber(db)
+    await db.promise().query(
+      `UPDATE transactions SET transaction_number = ? WHERE id = ?`,
+      [transactionNumber, row.id]
+    )
+  }
+
+  await db.promise().query(
+    `CREATE UNIQUE INDEX uk_transactions_transaction_number
+     ON transactions (transaction_number)`
+  ).catch(() => {})
+}
+
+function backfillLegacyGatewayColumns() {
+  db.query(
+    `SELECT COLUMN_NAME
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'transactions'
+       AND COLUMN_NAME IN ('stripe_payment_id', 'stripe_session_id')`,
+    (err, rows) => {
+      if (err) return
+      const hasStripePaymentId = rows.some((row) => row.COLUMN_NAME === 'stripe_payment_id')
+      const hasStripeSessionId = rows.some((row) => row.COLUMN_NAME === 'stripe_session_id')
+      if (!hasStripePaymentId && !hasStripeSessionId) return
+
+      const updates = []
+      if (hasStripePaymentId) updates.push(`payment_id = COALESCE(payment_id, stripe_payment_id)`)
+      if (hasStripeSessionId) updates.push(`session_id = COALESCE(session_id, stripe_session_id)`)
+      if (!updates.length) return
+
+      db.query(
+        `UPDATE transactions SET ${updates.join(', ')}`,
+        () => {}
+      )
+    }
+  )
 }
 
 module.exports = runMigrations

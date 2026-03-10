@@ -124,6 +124,20 @@ function toOpenApiPath(pathname) {
   return pathname.replace(/:([A-Za-z0-9_]+)/g, '{$1}')
 }
 
+function resolveRoleTag(openApiPath) {
+  if (openApiPath === '/health') return 'Health'
+  if (openApiPath.startsWith('/api/admin')) return 'Admin APIs'
+  if (openApiPath.startsWith('/api/investor')) return 'Investor APIs'
+  if (openApiPath.startsWith('/api/accounts')) return 'Trader APIs'
+
+  const sharedPrefixes = ['/api/auth', '/api/wallet', '/api/user', '/api/settings', '/api/kyc']
+  if (sharedPrefixes.some((prefix) => openApiPath.startsWith(prefix))) {
+    return 'Trader + Investor APIs'
+  }
+
+  return 'Trader + Investor APIs'
+}
+
 const MANUALLY_DOCUMENTED_OPERATIONS = new Set([
   'POST /api/auth/register',
   'POST /api/auth/register-with-otp',
@@ -222,16 +236,7 @@ function buildAutoPathDocs() {
       }
 
       if (!paths[openApiPath][method]) {
-        const tagMap = {
-          '/api/auth': 'Customer - Auth',
-          '/api/user': 'Customer - User',
-          '/api/accounts': 'Customer - Accounts',
-          '/api/wallet': 'Customer - Wallet',
-          '/api/kyc': 'Customer - KYC',
-          '/api/settings': 'Customer - Settings',
-          '/api/admin': 'Admin - General'
-        }
-        const tag = tagMap[mountPrefix] || 'General'
+        const tag = resolveRoleTag(openApiPath)
         paths[openApiPath][method] = {
           tags: [tag],
           summary: `Auto-generated documentation for ${method.toUpperCase()} ${openApiPath}`,
@@ -255,20 +260,10 @@ function getSwaggerSpec() {
       },
       tags: [
         { name: 'Health', description: 'System health endpoints' },
-        { name: 'Customer', description: 'Customer panel APIs' },
-        { name: 'Customer - Auth', description: 'Customer authentication and registration' },
-        { name: 'Customer - User', description: 'Customer user profile APIs' },
-        { name: 'Customer - Accounts', description: 'Customer trading account APIs' },
-        { name: 'Customer - Wallet', description: 'Customer wallet and transactions APIs' },
-        { name: 'Customer - KYC', description: 'Customer KYC APIs' },
-        { name: 'Customer - Settings', description: 'Customer security/settings APIs' },
-        { name: 'Admin', description: 'Admin panel APIs' },
-        { name: 'Admin - Auth', description: 'Admin authentication APIs' },
-        { name: 'Admin - Users', description: 'Admin user management APIs' },
-        { name: 'Admin - Compliance', description: 'Admin KYC/compliance APIs' },
-        { name: 'Admin - Dashboard', description: 'Admin dashboard metrics APIs' },
-        { name: 'Admin - Payments', description: 'Admin payment gateways and bank transfer review APIs' },
-        { name: 'Admin - General', description: 'Auto-generated admin endpoints' }
+        { name: 'Admin APIs', description: 'Admin-only APIs' },
+        { name: 'Trader APIs', description: 'Trader-only APIs' },
+        { name: 'Investor APIs', description: 'Investor-only APIs' },
+        { name: 'Trader + Investor APIs', description: 'Shared APIs available to both trader and investor accounts' }
       ],
       servers: [
         { url: process.env.BASE_URL || 'https://temp.inglozone.com' }
@@ -326,7 +321,7 @@ function getSwaggerSpec() {
         ...buildAutoPathDocs(),
         '/api/kyc/status': {
           get: {
-            tags: ['Customer - KYC'],
+            tags: ['Trader + Investor APIs'],
             summary: 'Get current user KYC workflow status',
             responses: {
               200: {
@@ -385,7 +380,18 @@ function getSwaggerSpec() {
     apis: ['./src/docs/*.js']
   }
 
-  return swaggerJsdoc(options)
+  const spec = swaggerJsdoc(options)
+  spec.tags = options.definition.tags
+  const methodKeys = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options'])
+
+  Object.entries(spec.paths || {}).forEach(([openApiPath, pathItem]) => {
+    Object.entries(pathItem || {}).forEach(([method, operation]) => {
+      if (!methodKeys.has(method) || !operation || typeof operation !== 'object') return
+      operation.tags = [resolveRoleTag(openApiPath)]
+    })
+  })
+
+  return spec
 }
 
 module.exports = { swaggerUi, getSwaggerSpec }

@@ -5,8 +5,8 @@ const controller = require('../controllers/account.controller')
 const auth = require('../middleware/auth.middleware')
 
 // user - FIXED: use auth.verifyToken instead of just auth
-router.get('/dashboard', auth.verifyToken, controller.dashboard)
-router.post('/create', auth.verifyToken, controller.createAccount)
+router.get('/dashboard', auth.verifyToken, auth.requireAccountType('trader'), controller.dashboard)
+router.post('/create', auth.verifyToken, auth.requireAccountType('trader'), controller.createAccount)
 
 // admin / testing
 router.get('/dashboard/:userId', controller.dashboardByUserId)

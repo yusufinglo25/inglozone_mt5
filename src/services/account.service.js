@@ -3,8 +3,14 @@ const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const { getNextUserId } = require('../utils/id-generator')
 
+const normalizeAccountType = (value) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return normalized === 'investor' ? 'investor' : 'trader'
+}
+
 exports.register = async (data) => {
-  const { firstName, lastName, email, password } = data
+  const { firstName, lastName, email, password, accountType } = data
+  const normalizedAccountType = normalizeAccountType(accountType)
 
   // Check if email already exists
   const existingUser = await new Promise((resolve, reject) => {
@@ -27,9 +33,9 @@ exports.register = async (data) => {
 
   return new Promise((resolve, reject) => {
     db.query(
-      `INSERT INTO users (id, first_name, last_name, email, password_hash, provider, is_verified, password_set)
-       VALUES (?, ?, ?, ?, ?, 'local', true, true)`,
-      [id, firstName, lastName, email, hash],
+      `INSERT INTO users (id, first_name, last_name, email, password_hash, provider, is_verified, password_set, account_type)
+       VALUES (?, ?, ?, ?, ?, 'local', true, true, ?)`,
+      [id, firstName, lastName, email, hash, normalizedAccountType],
       (err) => {
         if (err) return reject(err)
         resolve({
@@ -79,7 +85,8 @@ exports.login = async (data) => {
             lastName: user.last_name,
             avatarUrl: user.avatar_url,
             isVerified: user.is_verified,
-            provider: user.provider
+            provider: user.provider,
+            accountType: normalizeAccountType(user.account_type)
           }
         })
       }
@@ -176,8 +183,8 @@ exports.findOrCreateGoogleUser = async (profile) => {
             db.query(
               `INSERT INTO users (
                 id, google_id, email, first_name, last_name, 
-                avatar_url, provider, is_verified, password_set
-              ) VALUES (?, ?, ?, ?, ?, ?, 'google', true, false)`,
+                avatar_url, provider, is_verified, password_set, account_type
+              ) VALUES (?, ?, ?, ?, ?, ?, 'google', true, false, 'trader')`,
               [userId, id, email, firstName, lastName, avatarUrl],
               (err) => {
                 if (err) return reject(err)
@@ -190,11 +197,12 @@ exports.findOrCreateGoogleUser = async (profile) => {
                     lastName,
                     avatarUrl,
                     isVerified: true,
-                    provider: 'google',
-                    passwordSet: false
-                  },
-                  isNew: true
-                })
+                  provider: 'google',
+                  passwordSet: false,
+                  accountType: 'trader'
+                },
+                isNew: true
+              })
               }
             )
           }

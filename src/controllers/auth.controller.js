@@ -19,13 +19,17 @@ const addCorsHeaders = (res, req) => {
 // OLD FUNCTIONS - KEEP AS IS (commented out since we're using OTP now)
 exports.register = async (req, res) => {
   try {
-    const { firstName, lastName, email, password } = req.body
+    const { firstName, lastName, email, password, accountType } = req.body
 
-    if (!firstName || !lastName || !email || !password) {
+    if (!firstName || !lastName || !email || !password || !accountType) {
       res = addCorsHeaders(res, req);
       return res.status(400).json({
-        error: 'All fields are required'
+        error: 'All fields are required including accountType'
       })
+    }
+    if (!['trader', 'investor'].includes(String(accountType).toLowerCase())) {
+      res = addCorsHeaders(res, req);
+      return res.status(400).json({ error: 'accountType must be trader or investor' })
     }
 
     const passwordError = validatePasswordPolicy(password)
@@ -34,7 +38,7 @@ exports.register = async (req, res) => {
       return res.status(400).json({ error: passwordError })
     }
 
-    const user = await service.register({ firstName, lastName, email, password })
+    const user = await service.register({ firstName, lastName, email, password, accountType })
     res = addCorsHeaders(res, req);
     res.json(user)
   } catch (err) {
@@ -71,13 +75,17 @@ exports.login = async (req, res) => {
 // NEW OTP FUNCTIONS
 exports.registerWithOTP = async (req, res) => {
   try {
-    const { firstName, lastName, email, password } = req.body
+    const { firstName, lastName, email, password, accountType } = req.body
     
-    if (!firstName || !lastName || !email || !password) {
+    if (!firstName || !lastName || !email || !password || !accountType) {
       res = addCorsHeaders(res, req);
       return res.status(400).json({ 
-        error: 'All fields are required' 
+        error: 'All fields are required including accountType'
       })
+    }
+    if (!['trader', 'investor'].includes(String(accountType).toLowerCase())) {
+      res = addCorsHeaders(res, req);
+      return res.status(400).json({ error: 'accountType must be trader or investor' })
     }
     
     const passwordError = validatePasswordPolicy(password)
@@ -92,7 +100,8 @@ exports.registerWithOTP = async (req, res) => {
       firstName,
       lastName,
       email,
-      password
+      password,
+      accountType
     })
     
     res = addCorsHeaders(res, req);

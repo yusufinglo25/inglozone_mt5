@@ -5,7 +5,10 @@ const jwt = require('jsonwebtoken')
 const crypto = require('crypto')
 const path = require('path')
 const fs = require('fs')
-const { generateUniqueTransactionId } = require('../utils/id-generator')
+const {
+  generateUniqueTransactionId,
+  generateUniqueTransactionNumber
+} = require('../utils/id-generator')
 
 class WalletService {
   constructor() {
@@ -215,6 +218,14 @@ class WalletService {
     return { alreadyCompleted: false, transaction }
   }
 
+  sanitizeTransaction(record) {
+    if (!record || typeof record !== 'object') return record
+    const cleaned = { ...record }
+    delete cleaned.stripe_payment_id
+    delete cleaned.stripe_session_id
+    return cleaned
+  }
+
   // Get user wallet balance
   async getWallet(userId) {
     return new Promise((resolve, reject) => {
@@ -301,13 +312,14 @@ class WalletService {
 
       // Create transaction record
       const transactionId = await generateUniqueTransactionId(db)
+      const transactionNumber = await generateUniqueTransactionNumber(db)
       const wallet = await this.getWallet(userId)
       
       await new Promise((resolve, reject) => {
         db.query(
-          `INSERT INTO transactions (id, user_id, wallet_id, type, amount, currency, status, payment_provider, payment_method, country_code, description)
-           VALUES (?, ?, ?, 'deposit', ?, 'USD', 'Pending', 'stripe', 'card', ?, ?)`,
-          [transactionId, userId, wallet.id, amountUSD, countryCode, `Deposit of ${amountAED} AED (${amountUSD} USD)`],
+          `INSERT INTO transactions (id, transaction_number, user_id, wallet_id, type, amount, currency, status, payment_provider, payment_method, country_code, description)
+           VALUES (?, ?, ?, ?, 'deposit', ?, 'USD', 'Pending', 'stripe', 'card', ?, ?)`,
+          [transactionId, transactionNumber, userId, wallet.id, amountUSD, countryCode, `Deposit of ${amountAED} AED (${amountUSD} USD)`],
           (err) => {
             if (err) return reject(err)
             resolve()
@@ -481,13 +493,15 @@ class WalletService {
 
     const wallet = await this.getWallet(userId)
     const transactionId = await generateUniqueTransactionId(db)
+    const transactionNumber = await generateUniqueTransactionNumber(db)
 
     await new Promise((resolve, reject) => {
       db.query(
-        `INSERT INTO transactions (id, user_id, wallet_id, type, amount, currency, status, payment_provider, payment_method, country_code, description, metadata)
-         VALUES (?, ?, ?, 'deposit', ?, 'USD', 'Pending', 'tamara', 'bnpl', ?, ?, ?)`,
+        `INSERT INTO transactions (id, transaction_number, user_id, wallet_id, type, amount, currency, status, payment_provider, payment_method, country_code, description, metadata)
+         VALUES (?, ?, ?, ?, 'deposit', ?, 'USD', 'Pending', 'tamara', 'bnpl', ?, ?, ?)`,
         [
           transactionId,
+          transactionNumber,
           userId,
           wallet.id,
           amountUSD,
@@ -759,14 +773,16 @@ class WalletService {
 
     const wallet = await this.getWallet(userId)
     const transactionId = await generateUniqueTransactionId(db)
+    const transactionNumber = await generateUniqueTransactionNumber(db)
     const amountUSD = parseFloat((amount / (parseFloat(process.env.INR_TO_USD_RATE || '83.5'))).toFixed(2))
 
     await db.promise().query(
       `INSERT INTO transactions
-       (id, user_id, wallet_id, type, amount, currency, status, payment_provider, payment_method, country_code, description, metadata)
-       VALUES (?, ?, ?, 'deposit', ?, 'USD', 'Pending', 'razorpay', 'card', 'IN', ?, ?)`,
+       (id, transaction_number, user_id, wallet_id, type, amount, currency, status, payment_provider, payment_method, country_code, description, metadata)
+       VALUES (?, ?, ?, ?, 'deposit', ?, 'USD', 'Pending', 'razorpay', 'card', 'IN', ?, ?)`,
       [
         transactionId,
+        transactionNumber,
         userId,
         wallet.id,
         amountUSD,
@@ -913,13 +929,15 @@ class WalletService {
 
     const wallet = await this.getWallet(userId)
     const transactionId = await generateUniqueTransactionId(db)
+    const transactionNumber = await generateUniqueTransactionNumber(db)
 
     await db.promise().query(
       `INSERT INTO transactions
-       (id, user_id, wallet_id, type, amount, currency, status, payment_provider, payment_method, country_code, description, metadata)
-       VALUES (?, ?, ?, 'deposit', ?, 'USD', 'Pending', 'bank_transfer', 'bank_transfer', ?, ?, ?)`,
+       (id, transaction_number, user_id, wallet_id, type, amount, currency, status, payment_provider, payment_method, country_code, description, metadata)
+       VALUES (?, ?, ?, ?, 'deposit', ?, 'USD', 'Pending', 'bank_transfer', 'bank_transfer', ?, ?, ?)`,
       [
         transactionId,
+        transactionNumber,
         userId,
         wallet.id,
         numericAmount,
@@ -1002,7 +1020,9 @@ class WalletService {
   async getTransactions(userId, limit = 10, offset = 0) {
     return new Promise((resolve, reject) => {
       db.query(
-        `SELECT t.*, 
+        `SELECT t.id, t.transaction_number, t.user_id, t.wallet_id, t.type, t.amount, t.currency, t.status,
+                t.payment_provider, t.payment_method, t.country_code, t.payment_id, t.session_id,
+                t.description, t.metadata, t.review_reason, t.reviewed_by, t.reviewed_at, t.created_at, t.updated_at,
                 DATE_FORMAT(t.created_at, '%Y-%m-%d %H:%i:%s') as formatted_date
          FROM transactions t
          WHERE t.user_id = ?
@@ -1020,7 +1040,7 @@ class WalletService {
               if (countErr) return reject(countErr)
               
               resolve({
-                transactions: results,
+                transactions: results.map((item) => this.sanitizeTransaction(item)),
                 total: countResults[0].total,
                 limit,
                 offset
@@ -1036,14 +1056,16 @@ class WalletService {
   async getTransactionById(transactionId, userId) {
     return new Promise((resolve, reject) => {
       db.query(
-        `SELECT t.*, 
+        `SELECT t.id, t.transaction_number, t.user_id, t.wallet_id, t.type, t.amount, t.currency, t.status,
+                t.payment_provider, t.payment_method, t.country_code, t.payment_id, t.session_id,
+                t.description, t.metadata, t.review_reason, t.reviewed_by, t.reviewed_at, t.created_at, t.updated_at,
                 DATE_FORMAT(t.created_at, '%Y-%m-%d %H:%i:%s') as formatted_date
          FROM transactions t
          WHERE t.id = ? AND t.user_id = ?`,
         [transactionId, userId],
         (err, results) => {
           if (err || results.length === 0) return reject(new Error('Transaction not found'))
-          resolve(results[0])
+          resolve(this.sanitizeTransaction(results[0]))
         }
       )
     })

@@ -52,6 +52,7 @@ passport.use(
                 avatar_url: user.avatar_url,
                 is_verified: user.is_verified,
                 provider: user.provider || 'google',
+                account_type: user.account_type || 'trader',
                 password_set: user.password_set || false,
                 profile_completed: user.profile_completed
               })
@@ -87,6 +88,7 @@ passport.use(
                         avatar_url: avatarUrl,
                         is_verified: true,
                         provider: existingUser.provider === 'local' ? 'both' : 'google',
+                        account_type: existingUser.account_type || 'trader',
                         password_set: existingUser.password_set || true,
                         profile_completed: existingUser.profile_completed
                       })
@@ -99,8 +101,8 @@ passport.use(
                   db.query(
                     `INSERT INTO users (
                       id, first_name, last_name, email, google_id, 
-                      avatar_url, is_verified, provider, password_set, profile_completed
-                    ) VALUES (?, ?, ?, ?, ?, ?, true, 'google', false, false)`,
+                      avatar_url, is_verified, provider, password_set, profile_completed, account_type
+                    ) VALUES (?, ?, ?, ?, ?, ?, true, 'google', false, false, 'trader')`,
                     [id, firstName, lastName, email, profile.id, avatarUrl],
                     (insertErr) => {
                       if (insertErr) return done(insertErr)
@@ -113,6 +115,7 @@ passport.use(
                         avatar_url: avatarUrl,
                         is_verified: true,
                         provider: 'google',
+                        account_type: 'trader',
                         password_set: false,
                         profile_completed: false
                       })
@@ -153,6 +156,7 @@ passport.deserializeUser((id, done) => {
         avatar_url: user.avatar_url,
         is_verified: user.is_verified,
         provider: user.provider,
+        account_type: user.account_type || 'trader',
         password_set: user.password_set,
         profile_completed: user.profile_completed
       })

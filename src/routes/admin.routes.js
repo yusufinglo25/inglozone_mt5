@@ -6,11 +6,13 @@ const adminUserRoutes = require('./admin/user.routes')
 const adminKYCRoutes = require('./admin/kyc.routes')
 const adminDashboardRoutes = require('./admin/dashboard.routes')
 const adminPaymentRoutes = require('./admin/payment.routes')
+const adminInvestorRoutes = require('./admin/investor.routes')
 
 router.use('/auth', adminAuthRoutes)
 router.use('/users', adminUserRoutes)
 router.use('/kyc', adminKYCRoutes)
 router.use('/dashboard', adminDashboardRoutes)
 router.use('/payments', adminPaymentRoutes)
+router.use('/investors', adminInvestorRoutes)
 
 module.exports = router

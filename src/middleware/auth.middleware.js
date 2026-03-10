@@ -32,14 +32,39 @@ const verifyToken = async (req, res, next) => {
       }
     }
 
-    req.user = decoded
+    const [users] = await db.promise().query(
+      `SELECT id, account_type FROM users WHERE id = ? LIMIT 1`,
+      [decoded.id]
+    )
+    if (users.length === 0) {
+      return res.status(401).json({ error: 'User not found' })
+    }
+
+    const accountType = String(users[0].account_type || decoded.accountType || 'trader').toLowerCase()
+    req.user = {
+      ...decoded,
+      accountType,
+      account_type: accountType
+    }
     next()
   } catch (error) {
     return res.status(401).json({ error: 'Invalid token' })
   }
 }
 
+const requireAccountType = (...allowedTypes) => {
+  const normalized = allowedTypes.map((item) => String(item).toLowerCase())
+  return (req, res, next) => {
+    const currentType = String(req.user?.accountType || req.user?.account_type || '').toLowerCase()
+    if (!normalized.includes(currentType)) {
+      return res.status(403).json({ error: 'Access denied for this account type' })
+    }
+    next()
+  }
+}
+
 // Export as an object
 module.exports = {
-  verifyToken
+  verifyToken,
+  requireAccountType
 }

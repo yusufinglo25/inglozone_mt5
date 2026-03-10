@@ -252,7 +252,7 @@ class AdminPaymentService {
 
     const [rows] = await db.promise().query(
       `SELECT
-         t.id, t.user_id AS userId, t.amount, t.currency, t.status, t.country_code AS countryCode,
+         t.id, t.transaction_number AS transactionNumber, t.user_id AS userId, t.amount, t.currency, t.status, t.country_code AS countryCode,
          t.created_at AS createdAt, t.updated_at AS updatedAt,
          u.email,
          btp.id AS proofId, btp.file_path AS proofPath, btp.original_filename AS originalFilename,
@@ -287,7 +287,11 @@ class AdminPaymentService {
   async getBankTransferDetails(transactionId) {
     const [rows] = await db.promise().query(
       `SELECT
-         t.*,
+         t.id, t.transaction_number AS transactionNumber, t.user_id AS userId, t.wallet_id AS walletId,
+         t.type, t.amount, t.currency, t.status, t.payment_provider AS paymentProvider, t.payment_method AS paymentMethod,
+         t.country_code AS countryCode, t.payment_id AS paymentId, t.session_id AS sessionId,
+         t.description, t.metadata, t.review_reason AS reviewReason, t.reviewed_by AS reviewedBy,
+         t.reviewed_at AS reviewedAt, t.created_at AS createdAt, t.updated_at AS updatedAt,
          u.email, u.first_name AS firstName, u.last_name AS lastName,
          btp.id AS proofId, btp.file_path AS proofPath, btp.original_filename AS originalFilename,
          btp.mime_type AS mimeType, btp.file_size AS fileSize, btp.uploaded_at AS uploadedAt

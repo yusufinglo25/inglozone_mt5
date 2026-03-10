@@ -7,6 +7,11 @@ const { v4: uuidv4 } = require('uuid')
 const emailService = require('./email.service')
 const { getNextUserId } = require('../utils/id-generator')
 
+function normalizeAccountType(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return normalized === 'investor' ? 'investor' : 'trader'
+}
+
 function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex')
 }
@@ -26,7 +31,13 @@ function decrypt2FASecret(encryptedBase64, ivHex) {
 async function createUserSessionToken(user, ipAddress = null, userAgent = null) {
   const jti = uuidv4()
   const token = jwt.sign(
-    { id: user.id, email: user.email, jti, type: 'user' },
+    {
+      id: user.id,
+      email: user.email,
+      jti,
+      type: 'user',
+      accountType: normalizeAccountType(user.account_type || user.accountType)
+    },
     process.env.JWT_SECRET,
     { expiresIn: '7d' }
   )
@@ -43,7 +54,8 @@ async function createUserSessionToken(user, ipAddress = null, userAgent = null) 
 }
 
 exports.register = async (data) => {
-  const { firstName, lastName, email, password } = data
+  const { firstName, lastName, email, password, accountType } = data
+  const normalizedAccountType = normalizeAccountType(accountType)
 
   const existingUser = await new Promise((resolve, reject) => {
     db.query(`SELECT id FROM users WHERE email = ?`, [email], (err, results) => {
@@ -61,16 +73,33 @@ exports.register = async (data) => {
 
   return new Promise((resolve, reject) => {
     db.query(
-      `INSERT INTO users (id, first_name, last_name, email, password_hash)
-       VALUES (?, ?, ?, ?, ?)`,
-      [id, firstName, lastName, email, hash],
+      `INSERT INTO users (id, first_name, last_name, email, password_hash, account_type)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, firstName, lastName, email, hash, normalizedAccountType],
       (err) => {
         if (err) return reject(err)
-        resolve({
-          success: true,
-          message: 'Account created successfully',
-          next: 'login'
-        })
+        if (normalizedAccountType === 'investor') {
+          db.query(
+            `INSERT INTO investor_accounts (id, user_id, account_status, balance, equity, floating_profit_loss, total_profit_loss)
+             VALUES (?, ?, 'pending', 0.00, 0.00, 0.00, 0.00)
+             ON DUPLICATE KEY UPDATE updated_at = NOW()`,
+            [uuidv4(), id],
+            (invErr) => {
+              if (invErr) return reject(invErr)
+              resolve({
+                success: true,
+                message: 'Account created successfully',
+                next: 'login'
+              })
+            }
+          )
+        } else {
+          resolve({
+            success: true,
+            message: 'Account created successfully',
+            next: 'login'
+          })
+        }
       }
     )
   })
@@ -113,6 +142,7 @@ exports.login = async (data) => {
           firstName: user.first_name,
           lastName: user.last_name,
           mobile: user.mobile,
+          accountType: normalizeAccountType(user.account_type),
           is2FAEnabled: user.is_2fa_enabled,
           profileCompleted: user.profile_completed
         }
@@ -122,7 +152,8 @@ exports.login = async (data) => {
 }
 
 exports.sendRegistrationOTP = async (data) => {
-  const { firstName, lastName, email, password } = data
+  const { firstName, lastName, email, password, accountType } = data
+  const normalizedAccountType = normalizeAccountType(accountType)
 
   const existingUser = await new Promise((resolve, reject) => {
     db.query(`SELECT id FROM users WHERE email = ?`, [email], (err, results) => {
@@ -193,7 +224,7 @@ exports.sendRegistrationOTP = async (data) => {
 
   const passwordHash = await bcrypt.hash(password, 10)
   const tempToken = jwt.sign(
-    { temp: true, email, firstName, lastName, passwordHash, otpId },
+    { temp: true, email, firstName, lastName, passwordHash, otpId, accountType: normalizedAccountType },
     process.env.JWT_SECRET,
     { expiresIn: '10m' }
   )
@@ -214,7 +245,8 @@ exports.verifyRegistrationOTP = async (tempToken, otpCode, sessionMeta = {}) => 
     const decoded = jwt.verify(tempToken, process.env.JWT_SECRET)
     if (!decoded.temp) throw new Error('Invalid verification token')
 
-    const { email, firstName, lastName, passwordHash, otpId } = decoded
+    const { email, firstName, lastName, passwordHash, otpId, accountType } = decoded
+    const normalizedAccountType = normalizeAccountType(accountType)
 
     const otpRecord = await new Promise((resolve, reject) => {
       db.query(
@@ -254,17 +286,26 @@ exports.verifyRegistrationOTP = async (tempToken, otpCode, sessionMeta = {}) => 
       db.query(
         `INSERT INTO users (
           id, first_name, last_name, email, password_hash,
-          provider, is_verified, email_verified, password_set, verified_at
-        ) VALUES (?, ?, ?, ?, ?, 'local', true, true, true, NOW())`,
-        [userId, firstName, lastName, email, passwordHash],
+          provider, is_verified, email_verified, password_set, verified_at, account_type
+        ) VALUES (?, ?, ?, ?, ?, 'local', true, true, true, NOW(), ?)`,
+        [userId, firstName, lastName, email, passwordHash, normalizedAccountType],
         (err) => (err ? reject(err) : resolve())
       )
     })
 
+    if (normalizedAccountType === 'investor') {
+      await db.promise().query(
+        `INSERT INTO investor_accounts (id, user_id, account_status, balance, equity, floating_profit_loss, total_profit_loss)
+         VALUES (?, ?, 'pending', 0.00, 0.00, 0.00, 0.00)
+         ON DUPLICATE KEY UPDATE updated_at = NOW()`,
+        [uuidv4(), userId]
+      )
+    }
+
     db.query(`DELETE FROM otp_verifications WHERE id = ?`, [otpId])
 
     const token = await createUserSessionToken(
-      { id: userId, email },
+      { id: userId, email, accountType: normalizedAccountType },
       sessionMeta.ipAddress || null,
       sessionMeta.userAgent || null
     )
@@ -280,7 +321,8 @@ exports.verifyRegistrationOTP = async (tempToken, otpCode, sessionMeta = {}) => 
         lastName,
         emailVerified: true,
         isVerified: true,
-        provider: 'local'
+        provider: 'local',
+        accountType: normalizedAccountType
       }
     }
   } catch (error) {
@@ -359,7 +401,8 @@ exports.resendRegistrationOTP = async (tempToken) => {
         firstName: decoded.firstName,
         lastName: decoded.lastName,
         passwordHash: decoded.passwordHash,
-        otpId
+        otpId,
+        accountType: normalizeAccountType(decoded.accountType)
       },
       process.env.JWT_SECRET,
       { expiresIn: '10m' }

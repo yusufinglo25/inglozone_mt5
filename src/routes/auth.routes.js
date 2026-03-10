@@ -3,6 +3,7 @@ const router = express.Router()
 const controller = require('../controllers/auth.controller')
 const passport = require('passport')
 const authService = require('../services/auth.service')
+const jwt = require('jsonwebtoken')
 
 // OLD ROUTES (if you want to keep direct registration)
 router.post('/register', controller.register) // Direct registration (optional)
@@ -32,7 +33,7 @@ router.get('/google/callback',
       }
       
       const token = await authService.createUserSessionToken(
-        { id: req.user.id, email: req.user.email },
+        { id: req.user.id, email: req.user.email, accountType: req.user.account_type || req.user.accountType || 'trader' },
         req.ip,
         req.get('User-Agent')
       )

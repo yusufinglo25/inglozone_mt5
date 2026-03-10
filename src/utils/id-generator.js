@@ -37,11 +37,25 @@ async function generateUniqueTransactionId(db, maxAttempts = 20) {
   throw new Error('Failed to generate unique transaction id')
 }
 
+async function generateUniqueTransactionNumber(db, maxAttempts = 20) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const candidate = buildRandomTxId()
+    const [rows] = await db.promise().query(
+      `SELECT id FROM transactions WHERE transaction_number = ? LIMIT 1`,
+      [candidate]
+    )
+    if (rows.length === 0) return candidate
+  }
+
+  throw new Error('Failed to generate unique transaction number')
+}
+
 module.exports = {
   USER_ID_START,
   TX_PREFIX,
   TX_DIGITS,
   isDigitsOnly,
   getNextUserId,
-  generateUniqueTransactionId
+  generateUniqueTransactionId,
+  generateUniqueTransactionNumber
 }
