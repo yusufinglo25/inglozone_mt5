@@ -15,6 +15,7 @@ router.post('/resend-otp', controller.resendOTP) // Resend OTP
 
 // LOGIN ROUTE
 router.post('/login', controller.login)
+router.post('/login/verify-2fa', controller.verifyLogin2FA)
 
 // GOOGLE OAUTH ROUTES
 router.post('/check-email', controller.checkEmail)

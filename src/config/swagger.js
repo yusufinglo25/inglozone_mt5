@@ -144,6 +144,7 @@ const MANUALLY_DOCUMENTED_OPERATIONS = new Set([
   'POST /api/auth/verify-otp',
   'POST /api/auth/resend-otp',
   'POST /api/auth/login',
+  'POST /api/auth/login/verify-2fa',
   'POST /api/auth/check-email',
   'POST /api/auth/complete-profile',
   'GET /api/auth/status',

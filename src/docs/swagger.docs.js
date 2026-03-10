@@ -725,7 +725,7 @@
  * /api/auth/login:
  *   post:
  *     tags: [Customer - Auth]
- *     summary: Log in user and receive JWT token
+ *     summary: Log in user and receive JWT token (or 2FA challenge token)
  *     security: []
  *     requestBody:
  *       required: true
@@ -738,7 +738,53 @@
  *             $ref: '#/components/schemas/LoginRequest'
  *     responses:
  *       200:
- *         description: Login successful
+ *         description: Login successful or requires 2FA verification
+ *         content:
+ *           application/json:
+ *             examples:
+ *               loginSuccess:
+ *                 value:
+ *                   token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+ *                   user:
+ *                     id: 25110
+ *                     email: user@example.com
+ *                     firstName: John
+ *                     lastName: Doe
+ *                     mobile: "+971501234567"
+ *                     is2FAEnabled: false
+ *                     profileCompleted: true
+ *               requires2FA:
+ *                 value:
+ *                   requires2FA: true
+ *                   message: 2FA verification required
+ *                   loginToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+ *       401:
+ *         description: Invalid credentials
+ *         content:
+ *           application/json:
+ *             example:
+ *               error: Invalid credentials
+ */
+
+/**
+ * @swagger
+ * /api/auth/login/verify-2fa:
+ *   post:
+ *     tags: [Customer - Auth]
+ *     summary: Verify login 2FA challenge and receive JWT token
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             $ref: '#/components/schemas/VerifyLogin2FARequest'
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/VerifyLogin2FARequest'
+ *     responses:
+ *       200:
+ *         description: 2FA verified and login completed
  *         content:
  *           application/json:
  *             example:
@@ -749,14 +795,10 @@
  *                 firstName: John
  *                 lastName: Doe
  *                 mobile: "+971501234567"
- *                 is2FAEnabled: false
+ *                 is2FAEnabled: true
  *                 profileCompleted: true
  *       401:
- *         description: Invalid credentials
- *         content:
- *           application/json:
- *             example:
- *               error: Invalid credentials
+ *         description: Invalid or expired login token / 2FA code
  */
 
 /**
@@ -1247,6 +1289,23 @@
  *         password:
  *           type: string
  *           example: Strong@123
+ *         twoFactorCode:
+ *           type: string
+ *           description: Optional. If 2FA is enabled you can send it here, or use /api/auth/login/verify-2fa.
+ *           example: "123456"
+ *
+ *     VerifyLogin2FARequest:
+ *       type: object
+ *       required: [loginToken, twoFactorCode]
+ *       properties:
+ *         loginToken:
+ *           type: string
+ *           description: Token returned by /api/auth/login when requires2FA is true.
+ *           example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+ *         twoFactorCode:
+ *           type: string
+ *           pattern: '^\d{6}$'
+ *           example: "123456"
  *
  *     CheckEmailRequest:
  *       type: object

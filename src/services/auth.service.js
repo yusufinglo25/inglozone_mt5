@@ -28,6 +28,19 @@ function decrypt2FASecret(encryptedBase64, ivHex) {
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8')
 }
 
+function createPending2FAToken(user) {
+  return jwt.sign(
+    {
+      type: 'login_2fa',
+      id: user.id,
+      email: user.email,
+      accountType: normalizeAccountType(user.account_type || user.accountType)
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: '10m' }
+  )
+}
+
 async function createUserSessionToken(user, ipAddress = null, userAgent = null) {
   const jti = uuidv4()
   const token = jwt.sign(
@@ -117,7 +130,13 @@ exports.login = async (data) => {
       if (!match) return reject(new Error('Invalid credentials'))
 
       if (user.is_2fa_enabled) {
-        if (!twoFactorCode) return reject(new Error('2FA code is required'))
+        if (!twoFactorCode) {
+          return resolve({
+            requires2FA: true,
+            message: '2FA verification required',
+            loginToken: createPending2FAToken(user)
+          })
+        }
         if (!user.two_fa_secret_encrypted || !user.two_fa_secret_iv) {
           return reject(new Error('2FA configuration missing. Please re-enable 2FA.'))
         }
@@ -149,6 +168,57 @@ exports.login = async (data) => {
       })
     })
   })
+}
+
+exports.verifyLogin2FA = async (data) => {
+  const { loginToken, twoFactorCode, ipAddress, userAgent } = data
+
+  if (!loginToken) throw new Error('loginToken is required')
+  if (!twoFactorCode) throw new Error('2FA code is required')
+
+  let decoded
+  try {
+    decoded = jwt.verify(loginToken, process.env.JWT_SECRET)
+  } catch (error) {
+    throw new Error('Invalid or expired login token')
+  }
+
+  if (decoded.type !== 'login_2fa') {
+    throw new Error('Invalid login token')
+  }
+
+  const rows = await db.promise().query(`SELECT * FROM users WHERE id = ? LIMIT 1`, [decoded.id])
+  const user = rows[0]?.[0]
+  if (!user) throw new Error('User not found')
+  if (!user.is_2fa_enabled) throw new Error('2FA is not enabled for this user')
+  if (!user.two_fa_secret_encrypted || !user.two_fa_secret_iv) {
+    throw new Error('2FA configuration missing. Please re-enable 2FA.')
+  }
+
+  const base32Secret = decrypt2FASecret(user.two_fa_secret_encrypted, user.two_fa_secret_iv)
+  const verified = speakeasy.totp.verify({
+    secret: base32Secret,
+    encoding: 'base32',
+    token: String(twoFactorCode),
+    window: 1
+  })
+
+  if (!verified) throw new Error('Invalid 2FA code')
+
+  const token = await createUserSessionToken(user, ipAddress, userAgent)
+  return {
+    token,
+    user: {
+      id: user.id,
+      email: user.email,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      mobile: user.mobile,
+      accountType: normalizeAccountType(user.account_type),
+      is2FAEnabled: user.is_2fa_enabled,
+      profileCompleted: user.profile_completed
+    }
+  }
 }
 
 exports.sendRegistrationOTP = async (data) => {
@@ -471,6 +541,7 @@ module.exports = {
   sendRegistrationOTP: exports.sendRegistrationOTP,
   verifyRegistrationOTP: exports.verifyRegistrationOTP,
   resendRegistrationOTP: exports.resendRegistrationOTP,
+  verifyLogin2FA: exports.verifyLogin2FA,
   checkEmail: exports.checkEmail,
   completeProfile: exports.completeProfile,
   createUserSessionToken

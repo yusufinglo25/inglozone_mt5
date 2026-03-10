@@ -72,6 +72,30 @@ exports.login = async (req, res) => {
   }
 }
 
+exports.verifyLogin2FA = async (req, res) => {
+  try {
+    const loginToken = getFieldValue(req.body?.loginToken)
+    const twoFactorCode = getFieldValue(req.body?.twoFactorCode)
+
+    if (!loginToken || !twoFactorCode) {
+      res = addCorsHeaders(res, req);
+      return res.status(400).json({ error: 'loginToken and twoFactorCode are required' })
+    }
+
+    const result = await service.verifyLogin2FA({
+      loginToken,
+      twoFactorCode,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    })
+    res = addCorsHeaders(res, req);
+    res.status(200).json(result)
+  } catch (err) {
+    res = addCorsHeaders(res, req);
+    res.status(401).json({ error: err.message })
+  }
+}
+
 // NEW OTP FUNCTIONS
 exports.registerWithOTP = async (req, res) => {
   try {
