@@ -34,7 +34,8 @@ function createPending2FAToken(user) {
       type: 'login_2fa',
       id: user.id,
       email: user.email,
-      accountType: normalizeAccountType(user.account_type || user.accountType)
+      accountType: normalizeAccountType(user.account_type || user.accountType),
+      authVersion: Number(user.auth_version || 1)
     },
     process.env.JWT_SECRET,
     { expiresIn: '10m' }
@@ -42,6 +43,24 @@ function createPending2FAToken(user) {
 }
 
 async function createUserSessionToken(user, ipAddress = null, userAgent = null) {
+  let authVersion = Number(user.auth_version || 0)
+  let normalizedAccountType = normalizeAccountType(user.account_type || user.accountType)
+
+  if (!authVersion || !user.account_type) {
+    const [rows] = await db.promise().query(
+      `SELECT auth_version, account_type
+       FROM users
+       WHERE id = ?
+       LIMIT 1`,
+      [user.id]
+    )
+    if (rows[0]) {
+      authVersion = Number(rows[0].auth_version || 1)
+      normalizedAccountType = normalizeAccountType(rows[0].account_type || normalizedAccountType)
+    }
+  }
+
+  if (!authVersion) authVersion = 1
   const jti = uuidv4()
   const token = jwt.sign(
     {
@@ -49,7 +68,8 @@ async function createUserSessionToken(user, ipAddress = null, userAgent = null) 
       email: user.email,
       jti,
       type: 'user',
-      accountType: normalizeAccountType(user.account_type || user.accountType)
+      accountType: normalizedAccountType,
+      authVersion
     },
     process.env.JWT_SECRET,
     { expiresIn: '7d' }
@@ -151,7 +171,11 @@ exports.login = async (data) => {
         if (!verified) return reject(new Error('Invalid 2FA code'))
       }
 
-      const token = await createUserSessionToken(user, ipAddress, userAgent)
+      const normalizedUser = {
+        ...user,
+        auth_version: Number(user.auth_version || 1)
+      }
+      const token = await createUserSessionToken(normalizedUser, ipAddress, userAgent)
 
       resolve({
         token,
@@ -190,6 +214,11 @@ exports.verifyLogin2FA = async (data) => {
   const rows = await db.promise().query(`SELECT * FROM users WHERE id = ? LIMIT 1`, [decoded.id])
   const user = rows[0]?.[0]
   if (!user) throw new Error('User not found')
+  const userAuthVersion = Number(user.auth_version || 1)
+  const tokenAuthVersion = Number(decoded.authVersion || 1)
+  if (tokenAuthVersion !== userAuthVersion) {
+    throw new Error('Login session expired. Please login again.')
+  }
   if (!user.is_2fa_enabled) throw new Error('2FA is not enabled for this user')
   if (!user.two_fa_secret_encrypted || !user.two_fa_secret_iv) {
     throw new Error('2FA configuration missing. Please re-enable 2FA.')
@@ -205,7 +234,7 @@ exports.verifyLogin2FA = async (data) => {
 
   if (!verified) throw new Error('Invalid 2FA code')
 
-  const token = await createUserSessionToken(user, ipAddress, userAgent)
+  const token = await createUserSessionToken({ ...user, auth_version: userAuthVersion }, ipAddress, userAgent)
   return {
     token,
     user: {

@@ -66,7 +66,10 @@ exports.generate2FA = async (req, res) => {
 exports.verify2FA = async (req, res) => {
   try {
     const { code } = req.body
-    const result = await settingsService.verify2FA(req.user.id, code)
+    const result = await settingsService.verify2FA(req.user.id, code, {
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    })
     res.json(result)
   } catch (error) {
     res.status(400).json({ error: error.message })
@@ -76,7 +79,10 @@ exports.verify2FA = async (req, res) => {
 exports.disable2FA = async (req, res) => {
   try {
     const { code } = req.body
-    const result = await settingsService.disable2FA(req.user.id, code)
+    const result = await settingsService.disable2FA(req.user.id, code, {
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    })
     res.json(result)
   } catch (error) {
     res.status(400).json({ error: error.message })

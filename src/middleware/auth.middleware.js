@@ -33,11 +33,17 @@ const verifyToken = async (req, res, next) => {
     }
 
     const [users] = await db.promise().query(
-      `SELECT id, account_type FROM users WHERE id = ? LIMIT 1`,
+      `SELECT id, account_type, auth_version FROM users WHERE id = ? LIMIT 1`,
       [decoded.id]
     )
     if (users.length === 0) {
       return res.status(401).json({ error: 'User not found' })
+    }
+
+    const currentAuthVersion = Number(users[0].auth_version || 1)
+    const tokenAuthVersion = Number(decoded.authVersion || 1)
+    if (tokenAuthVersion !== currentAuthVersion) {
+      return res.status(401).json({ error: 'Session expired or invalidated' })
     }
 
     const accountType = String(users[0].account_type || decoded.accountType || 'trader').toLowerCase()

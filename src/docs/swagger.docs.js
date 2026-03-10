@@ -137,7 +137,7 @@
  * /api/settings/2fa/verify:
  *   post:
  *     tags: [Customer - Settings]
- *     summary: Verify 2FA code and enable 2FA
+ *     summary: Verify 2FA code and enable 2FA (rotates active session token)
  *     requestBody:
  *       required: true
  *       content:
@@ -150,7 +150,13 @@
  *                 type: string
  *     responses:
  *       200:
- *         description: 2FA enabled
+ *         description: 2FA enabled and new token issued
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               message: 2FA enabled successfully
+ *               token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
  */
 
 /**
@@ -158,7 +164,7 @@
  * /api/settings/2fa/disable:
  *   post:
  *     tags: [Customer - Settings]
- *     summary: Disable 2FA for current user
+ *     summary: Disable 2FA for current user (rotates active session token)
  *     requestBody:
  *       required: true
  *       content:
@@ -171,7 +177,13 @@
  *                 type: string
  *     responses:
  *       200:
- *         description: 2FA disabled
+ *         description: 2FA disabled and new token issued
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               message: 2FA disabled successfully
+ *               token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
  */
 
 /**

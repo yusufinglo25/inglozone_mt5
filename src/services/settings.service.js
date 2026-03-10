@@ -14,9 +14,10 @@ class SettingsService {
   }
 
   async createSessionToken(user, ipAddress = null, userAgent = null) {
+    const authVersion = Number(user.auth_version || 1)
     const jti = uuidv4()
     const token = jwt.sign(
-      { id: user.id, email: user.email, jti, type: 'user' },
+      { id: user.id, email: user.email, jti, type: 'user', authVersion },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     )
@@ -57,6 +58,15 @@ class SettingsService {
     const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivHex, 'hex'))
     decipher.setAuthTag(authTag)
     return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8')
+  }
+
+  async revokeAllActiveSessions(userId) {
+    await db.promise().query(
+      `UPDATE user_sessions
+       SET revoked_at = NOW(), updated_at = NOW()
+       WHERE user_id = ? AND revoked_at IS NULL`,
+      [userId]
+    )
   }
 
   async requestOldEmailOTP(userId) {
@@ -319,7 +329,7 @@ class SettingsService {
     }
   }
 
-  async verify2FA(userId, code) {
+  async verify2FA(userId, code, sessionMeta = {}) {
     const [rows] = await db.promise().query(
       `SELECT two_fa_temp_secret_encrypted, two_fa_temp_secret_iv, two_fa_temp_expires_at
        FROM users WHERE id = ? LIMIT 1`,
@@ -353,15 +363,29 @@ class SettingsService {
            two_fa_secret_iv = ?,
            two_fa_temp_secret_encrypted = NULL,
            two_fa_temp_secret_iv = NULL,
-           two_fa_temp_expires_at = NULL
+           two_fa_temp_expires_at = NULL,
+           auth_version = COALESCE(auth_version, 1) + 1
        WHERE id = ?`,
       [encryptedFinal.encrypted, encryptedFinal.iv, userId]
     )
 
-    return { success: true, message: '2FA enabled successfully' }
+    const [updatedRows] = await db.promise().query(
+      `SELECT id, email, auth_version FROM users WHERE id = ? LIMIT 1`,
+      [userId]
+    )
+    if (updatedRows.length === 0) throw new Error('User not found')
+
+    await this.revokeAllActiveSessions(userId)
+    const token = await this.createSessionToken(
+      updatedRows[0],
+      sessionMeta.ipAddress || null,
+      sessionMeta.userAgent || null
+    )
+
+    return { success: true, message: '2FA enabled successfully', token }
   }
 
-  async disable2FA(userId, code) {
+  async disable2FA(userId, code, sessionMeta = {}) {
     const [rows] = await db.promise().query(
       `SELECT is_2fa_enabled, two_fa_secret_encrypted, two_fa_secret_iv
        FROM users WHERE id = ? LIMIT 1`,
@@ -387,12 +411,26 @@ class SettingsService {
            two_fa_secret_iv = NULL,
            two_fa_temp_secret_encrypted = NULL,
            two_fa_temp_secret_iv = NULL,
-           two_fa_temp_expires_at = NULL
+           two_fa_temp_expires_at = NULL,
+           auth_version = COALESCE(auth_version, 1) + 1
        WHERE id = ?`,
       [userId]
     )
 
-    return { success: true, message: '2FA disabled successfully' }
+    const [updatedRows] = await db.promise().query(
+      `SELECT id, email, auth_version FROM users WHERE id = ? LIMIT 1`,
+      [userId]
+    )
+    if (updatedRows.length === 0) throw new Error('User not found')
+
+    await this.revokeAllActiveSessions(userId)
+    const token = await this.createSessionToken(
+      updatedRows[0],
+      sessionMeta.ipAddress || null,
+      sessionMeta.userAgent || null
+    )
+
+    return { success: true, message: '2FA disabled successfully', token }
   }
 
   async logoutAllDevices(userId) {

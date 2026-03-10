@@ -17,6 +17,7 @@ const runMigrations = () => {
       mobile VARCHAR(20),
       google_id VARCHAR(255),
       account_type ENUM('trader','investor') NOT NULL DEFAULT 'trader',
+      auth_version INT NOT NULL DEFAULT 1,
       is_2fa_enabled BOOLEAN DEFAULT false,
       profile_completed BOOLEAN DEFAULT false,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -241,6 +242,7 @@ function addForeignKeys() {
       { name: 'avatar_url', type: 'VARCHAR(500) DEFAULT NULL' },
       { name: 'provider', type: 'VARCHAR(50) DEFAULT "local"' },
       { name: 'account_type', type: 'ENUM("trader","investor") NOT NULL DEFAULT "trader"' },
+      { name: 'auth_version', type: 'INT NOT NULL DEFAULT 1' },
       { name: 'email_verified', type: 'BOOLEAN DEFAULT false' },
       { name: 'verified_at', type: 'TIMESTAMP DEFAULT NULL' }
     ]
@@ -1107,6 +1109,26 @@ function runPostUserMigrations(done = () => {}) {
            WHERE account_type IS NULL
               OR account_type = ''
               OR account_type NOT IN ('trader', 'investor')`
+        )
+      })
+      await runOneTimeMigration('users_auth_version_default_v1', async () => {
+        const [columnRows] = await db.promise().query(
+          `SELECT COUNT(*) AS exists_flag
+           FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = 'users'
+             AND COLUMN_NAME = 'auth_version'`
+        )
+        if (Number(columnRows[0]?.exists_flag || 0) === 0) {
+          await db.promise().query(
+            `ALTER TABLE users ADD COLUMN auth_version INT NOT NULL DEFAULT 1`
+          )
+        }
+
+        await db.promise().query(
+          `UPDATE users
+           SET auth_version = 1
+           WHERE auth_version IS NULL OR auth_version < 1`
         )
       })
       await runOneTimeMigration('transactions_backfill_transaction_number_v1', backfillTransactionNumbersOnce)
