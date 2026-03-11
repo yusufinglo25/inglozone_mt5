@@ -141,7 +141,7 @@ class AdminAuthService {
       [admin.id]
     )
 
-    const zohoRefreshToken = tokenRows[0]?.zoho_refresh_token || process.env.ZOHO_REFRESH_TOKEN || null
+    const zohoRefreshToken = tokenRows[0]?.zoho_refresh_token || null
 
     return this.createAdminSession(admin, {
       ipAddress,
@@ -237,8 +237,8 @@ class AdminAuthService {
   }
 
   async getValidZohoAccessToken(session) {
-    const currentAccessToken = session.zoho_access_token || process.env.ZOHO_ACCESS_TOKEN || null
-    const currentRefreshToken = session.zoho_refresh_token || process.env.ZOHO_REFRESH_TOKEN || null
+    let currentAccessToken = session.zoho_access_token || null
+    let currentRefreshToken = session.zoho_refresh_token || null
 
     if (
       currentAccessToken &&
@@ -246,6 +246,20 @@ class AdminAuthService {
       new Date(session.zoho_expires_at).getTime() - Date.now() > 120000
     ) {
       return currentAccessToken
+    }
+
+    if (!currentRefreshToken && session.admin_user_id) {
+      const [tokenRows] = await db.promise().query(
+        `SELECT zoho_refresh_token
+         FROM admin_sessions
+         WHERE admin_user_id = ?
+           AND zoho_refresh_token IS NOT NULL
+           AND zoho_refresh_token <> ''
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [session.admin_user_id]
+      )
+      currentRefreshToken = tokenRows[0]?.zoho_refresh_token || null
     }
 
     if (currentRefreshToken) {
@@ -266,11 +280,7 @@ class AdminAuthService {
       return newAccessToken
     }
 
-    if (currentAccessToken) {
-      return currentAccessToken
-    }
-
-    throw new Error('Zoho token is not configured. Login with Zoho once or set ZOHO_REFRESH_TOKEN.')
+    throw new Error('Zoho refresh token not found in database. Login once using Zoho OAuth to seed token.')
   }
 
   async getAuthorizedAdmin(profile) {
