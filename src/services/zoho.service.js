@@ -86,7 +86,17 @@ class ZohoService {
       throw new Error('ZOHO_EMPLOYEES_API_URL is not configured')
     }
 
-    const response = await fetch(this.employeeApiUrl, {
+    let requestUrl = this.employeeApiUrl
+    try {
+      const parsed = new URL(this.employeeApiUrl)
+      if (!parsed.searchParams.has('sIndex')) parsed.searchParams.set('sIndex', '1')
+      if (!parsed.searchParams.has('limit')) parsed.searchParams.set('limit', '200')
+      requestUrl = parsed.toString()
+    } catch (_) {
+      // Keep original URL if parsing fails.
+    }
+
+    const response = await fetch(requestUrl, {
       method: 'GET',
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }
     })
@@ -175,7 +185,34 @@ class ZohoService {
       rows = Object.values(payload.response)
     }
 
-    return rows
+    // Zoho People often returns:
+    // { response: { result: [ { "<zohoId>": [ { employeeRecord } ] } ] } }
+    // Flatten any nested array/object layers into plain employee record objects.
+    const flattenedRows = []
+    const flattenInto = (value) => {
+      if (Array.isArray(value)) {
+        value.forEach(flattenInto)
+        return
+      }
+      if (!value || typeof value !== 'object') return
+
+      const keys = Object.keys(value)
+      const looksLikeEmployeeRecord = (
+        keys.some((k) => ['EmailID', 'FirstName', 'LastName', 'EmployeeID', 'Zoho_ID'].includes(k)) ||
+        keys.some((k) => ['email', 'mail', 'work_email'].includes(String(k).toLowerCase()))
+      )
+      if (looksLikeEmployeeRecord) {
+        flattenedRows.push(value)
+        return
+      }
+
+      // Nested wrapper object (e.g. { "7594...": [ {...} ] })
+      Object.values(value).forEach(flattenInto)
+    }
+    flattenInto(rows)
+    const sourceRows = flattenedRows.length > 0 ? flattenedRows : rows
+
+    return sourceRows
       .map((row) => {
         if (!row || typeof row !== 'object') return null
 
@@ -190,12 +227,12 @@ class ZohoService {
         const fullName = getField(row, ['full_name', 'Full_Name', 'display_name', 'name', 'Employee Name']) ||
           `${firstName} ${lastName}`.trim()
         const statusRaw = String(
-          getField(row, ['status', 'employee_status', 'employment_status', 'Employee Status']) || 'active'
+          getField(row, ['status', 'employee_status', 'employment_status', 'Employee Status', 'Employeestatus']) || 'active'
         ).toLowerCase()
 
         return {
           zohoUserId: String(getField(row, [
-            'ZUID', 'id', 'user_id', 'userid', 'employee_id', 'employeeId', 'EmployeeID'
+            'ZUID', 'id', 'user_id', 'userid', 'employee_id', 'employeeId', 'EmployeeID', 'Zoho_ID'
           ]) || ''),
           fullName: fullName || email,
           email,
