@@ -130,7 +130,24 @@ class AdminAuthService {
       throw new Error('Invalid credentials')
     }
 
-    return this.createAdminSession(admin, { ipAddress, userAgent })
+    const [tokenRows] = await db.promise().query(
+      `SELECT zoho_refresh_token
+       FROM admin_sessions
+       WHERE admin_user_id = ?
+         AND zoho_refresh_token IS NOT NULL
+         AND zoho_refresh_token <> ''
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [admin.id]
+    )
+
+    const zohoRefreshToken = tokenRows[0]?.zoho_refresh_token || process.env.ZOHO_REFRESH_TOKEN || null
+
+    return this.createAdminSession(admin, {
+      ipAddress,
+      userAgent,
+      zohoRefreshToken
+    })
   }
 
   async bootstrapSuperAdmin(bootstrapKey) {
@@ -220,33 +237,40 @@ class AdminAuthService {
   }
 
   async getValidZohoAccessToken(session) {
-    if (!session.zoho_access_token) {
-      throw new Error('No Zoho access token stored in session')
+    const currentAccessToken = session.zoho_access_token || process.env.ZOHO_ACCESS_TOKEN || null
+    const currentRefreshToken = session.zoho_refresh_token || process.env.ZOHO_REFRESH_TOKEN || null
+
+    if (
+      currentAccessToken &&
+      session.zoho_expires_at &&
+      new Date(session.zoho_expires_at).getTime() - Date.now() > 120000
+    ) {
+      return currentAccessToken
     }
 
-    if (session.zoho_expires_at && new Date(session.zoho_expires_at).getTime() - Date.now() > 120000) {
-      return session.zoho_access_token
+    if (currentRefreshToken) {
+      const refreshed = await zohoService.refreshAccessToken(currentRefreshToken)
+      const newAccessToken = refreshed.access_token || currentAccessToken
+      const refreshToken = refreshed.refresh_token || currentRefreshToken
+      const expiresAt = refreshed.expires_in
+        ? new Date(Date.now() + (refreshed.expires_in * 1000))
+        : session.zoho_expires_at
+
+      await db.promise().query(
+        `UPDATE admin_sessions
+         SET zoho_access_token = ?, zoho_refresh_token = ?, zoho_expires_at = ?
+         WHERE id = ?`,
+        [newAccessToken, refreshToken, expiresAt, session.id]
+      )
+
+      return newAccessToken
     }
 
-    if (!session.zoho_refresh_token) {
-      return session.zoho_access_token
+    if (currentAccessToken) {
+      return currentAccessToken
     }
 
-    const refreshed = await zohoService.refreshAccessToken(session.zoho_refresh_token)
-    const newAccessToken = refreshed.access_token || session.zoho_access_token
-    const refreshToken = refreshed.refresh_token || session.zoho_refresh_token
-    const expiresAt = refreshed.expires_in
-      ? new Date(Date.now() + (refreshed.expires_in * 1000))
-      : session.zoho_expires_at
-
-    await db.promise().query(
-      `UPDATE admin_sessions
-       SET zoho_access_token = ?, zoho_refresh_token = ?, zoho_expires_at = ?
-       WHERE id = ?`,
-      [newAccessToken, refreshToken, expiresAt, session.id]
-    )
-
-    return newAccessToken
+    throw new Error('Zoho token is not configured. Login with Zoho once or set ZOHO_REFRESH_TOKEN.')
   }
 
   async getAuthorizedAdmin(profile) {
