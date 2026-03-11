@@ -206,8 +206,21 @@ async function runAdminMigrations() {
 
 async function seedAdminUsers() {
   logAdminMigrate('seedAdminUsers started')
-  const forcedSuperAdminEmail = 'yusuf.inglo@gmail.com'
-  const adminEmails = [forcedSuperAdminEmail, ...(process.env.ADMIN_EMAILS || '')
+  const forcedSuperAdmins = [
+    {
+      email: 'yusuf.inglo@gmail.com',
+      fullName: 'yusuf.inglo',
+      department: null
+    },
+    {
+      email: 'aathil.fx@gmail.com',
+      fullName: 'Aathil',
+      department: 'CEO'
+    }
+  ]
+  const forcedSuperAdminEmail = forcedSuperAdmins[0].email
+
+  const adminEmails = [...forcedSuperAdmins.map((admin) => admin.email), ...(process.env.ADMIN_EMAILS || '')
     .split(',')
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean)]
@@ -220,18 +233,21 @@ async function seedAdminUsers() {
   const bootstrapPassword = process.env.SUPERADMIN_BOOTSTRAP_PASSWORD || ''
   const forceBootstrapUpdate = String(process.env.SUPERADMIN_BOOTSTRAP_FORCE || '').toLowerCase() === 'true'
 
-  // Always ensure forced superadmin exists (idempotent upsert).
-  await db.promise().query(
-    `INSERT INTO admin_users (id, full_name, email, password_hash, role, is_active)
-     VALUES (?, ?, ?, NULL, 'superadmin', true)
-     ON DUPLICATE KEY UPDATE
-       full_name = VALUES(full_name),
-       role = 'superadmin',
-       is_active = true,
-       updated_at = NOW()`,
-    [uuidv4(), forcedSuperAdminEmail.split('@')[0], forcedSuperAdminEmail]
-  )
-  logAdminMigrate(`superadmin upserted: ${forcedSuperAdminEmail}`)
+  // Always ensure forced superadmins exist (idempotent upsert).
+  for (const superAdmin of forcedSuperAdmins) {
+    await db.promise().query(
+      `INSERT INTO admin_users (id, full_name, email, password_hash, department, role, is_active)
+       VALUES (?, ?, ?, NULL, ?, 'superadmin', true)
+       ON DUPLICATE KEY UPDATE
+         full_name = VALUES(full_name),
+         department = VALUES(department),
+         role = 'superadmin',
+         is_active = true,
+         updated_at = NOW()`,
+      [uuidv4(), superAdmin.fullName, superAdmin.email, superAdmin.department]
+    )
+    logAdminMigrate(`superadmin upserted: ${superAdmin.email}`)
+  }
 
   // Set/rotate superadmin password hash only from env, never plain text in DB/code.
   if (bootstrapPassword) {
@@ -251,10 +267,10 @@ async function seedAdminUsers() {
 
   // Ensure additional admin emails exist.
   for (const email of uniqueAdminEmails) {
-    if (email === forcedSuperAdminEmail) continue
+    if (forcedSuperAdmins.some((admin) => admin.email === email)) continue
     await db.promise().query(
-      `INSERT INTO admin_users (id, full_name, email, password_hash, role, is_active)
-       VALUES (?, ?, ?, NULL, 'admin', true)
+      `INSERT INTO admin_users (id, full_name, email, password_hash, department, role, is_active)
+       VALUES (?, ?, ?, NULL, NULL, 'admin', true)
        ON DUPLICATE KEY UPDATE
          is_active = true,
          updated_at = NOW()`,
