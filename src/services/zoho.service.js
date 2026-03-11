@@ -92,9 +92,21 @@ class ZohoService {
     })
 
     const contentType = response.headers.get('content-type') || ''
-    const data = contentType.includes('application/json')
+    let data = contentType.includes('application/json')
       ? await response.json()
       : await response.text()
+
+    // Zoho APIs may respond with JSON string but non-json content-type.
+    if (typeof data === 'string') {
+      const trimmed = data.trim()
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        try {
+          data = JSON.parse(trimmed)
+        } catch (_) {
+          // keep original string for error reporting
+        }
+      }
+    }
 
     if (!response.ok) {
       const message = typeof data === 'object'
@@ -123,47 +135,77 @@ class ZohoService {
   }
 
   normalizeZohoEmployees(payload) {
+    const unwrap = (value) => {
+      if (value && typeof value === 'object') {
+        if (Object.prototype.hasOwnProperty.call(value, 'value')) return value.value
+        if (Object.prototype.hasOwnProperty.call(value, 'displayValue')) return value.displayValue
+        if (Object.prototype.hasOwnProperty.call(value, 'display_value')) return value.display_value
+      }
+      return value
+    }
+
+    const getField = (row, keys) => {
+      for (const key of keys) {
+        if (Object.prototype.hasOwnProperty.call(row, key)) {
+          const value = unwrap(row[key])
+          if (value !== undefined && value !== null && String(value).trim() !== '') return value
+        }
+      }
+      const lowered = Object.keys(row).reduce((acc, key) => {
+        acc[key.toLowerCase()] = row[key]
+        return acc
+      }, {})
+      for (const key of keys) {
+        const value = unwrap(lowered[String(key).toLowerCase()])
+        if (value !== undefined && value !== null && String(value).trim() !== '') return value
+      }
+      return ''
+    }
+
     let rows = []
     if (Array.isArray(payload)) rows = payload
     else if (Array.isArray(payload?.data)) rows = payload.data
     else if (Array.isArray(payload?.employees)) rows = payload.employees
     else if (Array.isArray(payload?.response?.result)) rows = payload.response.result
+    else if (Array.isArray(payload?.response?.result?.data)) rows = payload.response.result.data
+    else if (Array.isArray(payload?.response?.result?.employees)) rows = payload.response.result.employees
     else if (typeof payload?.response?.result === 'object' && payload?.response?.result !== null) {
       rows = Object.values(payload.response.result)
+    } else if (typeof payload?.response === 'object' && payload?.response !== null) {
+      rows = Object.values(payload.response)
     }
 
     return rows
       .map((row) => {
-        const email = (
-          row.email ||
-          row.Email ||
-          row.EmailID ||
-          row.mail ||
-          row.work_email ||
-          ''
-        ).toLowerCase()
+        if (!row || typeof row !== 'object') return null
 
-        const firstName = row.first_name || row.First_Name || row.firstName || ''
-        const lastName = row.last_name || row.Last_Name || row.lastName || ''
-        const fullName = row.full_name || row.Full_Name || row.display_name || row.name ||
+        const email = String(getField(row, [
+          'email', 'Email', 'EmailID', 'Email ID', 'email_id',
+          'mail', 'work_email', 'workEmail', 'official_email',
+          'Official Email ID', 'Official_Email_ID'
+        ])).toLowerCase()
+
+        const firstName = String(getField(row, ['first_name', 'First_Name', 'firstName', 'First Name']) || '')
+        const lastName = String(getField(row, ['last_name', 'Last_Name', 'lastName', 'Last Name']) || '')
+        const fullName = getField(row, ['full_name', 'Full_Name', 'display_name', 'name', 'Employee Name']) ||
           `${firstName} ${lastName}`.trim()
-
         const statusRaw = String(
-          row.status || row.employee_status || row.employment_status || 'active'
+          getField(row, ['status', 'employee_status', 'employment_status', 'Employee Status']) || 'active'
         ).toLowerCase()
 
         return {
-          zohoUserId: String(
-            row.ZUID || row.id || row.user_id || row.userid || row.employee_id || row.employeeId || ''
-          ),
+          zohoUserId: String(getField(row, [
+            'ZUID', 'id', 'user_id', 'userid', 'employee_id', 'employeeId', 'EmployeeID'
+          ]) || ''),
           fullName: fullName || email,
           email,
-          department: row.department || row.Department || row.department_name || null,
+          department: getField(row, ['department', 'Department', 'department_name', 'Department Name']) || null,
           status: statusRaw.includes('term') || statusRaw.includes('inactive')
             ? 'Terminated'
             : 'Active'
         }
       })
+      .filter(Boolean)
       .filter((row) => row.email)
   }
 }
