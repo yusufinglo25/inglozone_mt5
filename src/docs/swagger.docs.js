@@ -210,6 +210,32 @@
 
 /**
  * @swagger
+ * /api/admin/auth/zoho/authorize-url:
+ *   get:
+ *     tags: [Admin - Auth]
+ *     summary: Get backend-generated Zoho OAuth authorize URL
+ *     security: []
+ *     parameters:
+ *       - in: query
+ *         name: redirectUri
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Optional redirect URI override. Must match Zoho app settings.
+ *     responses:
+ *       200:
+ *         description: Authorize URL generated
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               authUrl: https://accounts.zoho.com/oauth/v2/auth?client_id=1000.xxx&redirect_uri=https%3A%2F%2Finglo-zone-admin-panel.vercel.app%2Fauth%2Fzoho-callback&scope=ZOHOPEOPLE.forms.READ%2CZOHOPEOPLE.employee.READ%2Caaaserver.profile.READ&response_type=code&access_type=offline&prompt=consent
+ *       400:
+ *         description: Missing Zoho configuration
+ */
+
+/**
+ * @swagger
  * /api/admin/auth/login:
  *   post:
  *     tags: [Admin - Auth]
