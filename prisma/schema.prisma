@@ -1,0 +1,629 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model admin_sessions {
+  id                 String      @id @db.VarChar(36)
+  admin_user_id      String      @db.VarChar(36)
+  jwt_id             String      @unique(map: "jwt_id") @db.VarChar(128)
+  session_token_hash String      @db.VarChar(255)
+  zoho_access_token  String?     @db.Text
+  zoho_refresh_token String?     @db.Text
+  zoho_expires_at    DateTime?   @db.Timestamp(0)
+  ip_address         String?     @db.VarChar(45)
+  user_agent         String?     @db.Text
+  last_activity_at   DateTime?   @default(now()) @db.Timestamp(0)
+  expires_at         DateTime    @db.Timestamp(0)
+  revoked_at         DateTime?   @db.Timestamp(0)
+  created_at         DateTime?   @default(now()) @db.Timestamp(0)
+  admin_users        admin_users @relation(fields: [admin_user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_admin_sessions_admin")
+
+  @@index([admin_user_id], map: "idx_admin_session_admin")
+  @@index([expires_at], map: "idx_admin_session_exp")
+}
+
+model admin_users {
+  id                  String                @id @db.VarChar(36)
+  zoho_user_id        String?               @unique(map: "zoho_user_id") @db.VarChar(128)
+  full_name           String                @db.VarChar(150)
+  email               String                @unique(map: "email") @db.VarChar(255)
+  department          String?               @db.VarChar(120)
+  role                admin_users_role      @default(accounts)
+  is_active           Boolean?              @default(true)
+  created_at          DateTime?             @default(now()) @db.Timestamp(0)
+  updated_at          DateTime?             @default(now()) @db.Timestamp(0)
+  password_hash       String?               @db.VarChar(255)
+  admin_sessions      admin_sessions[]
+  kyc_records         kyc_records[]
+  risk_profiles       risk_profiles[]
+  user_access_control user_access_control[]
+  user_roles          user_roles[]
+
+  @@index([email], map: "idx_admin_email")
+  @@index([role], map: "idx_admin_role")
+}
+
+model bank_account_fields {
+  id                    String        @id @db.VarChar(36)
+  bank_account_id       String        @db.VarChar(36)
+  field_label           String        @db.VarChar(100)
+  field_value_encrypted String        @db.Text
+  field_value_iv        String        @db.VarChar(64)
+  display_order         Int           @default(1) @db.TinyInt
+  created_at            DateTime?     @default(now()) @db.Timestamp(0)
+  updated_at            DateTime?     @default(now()) @db.Timestamp(0)
+  bank_accounts         bank_accounts @relation(fields: [bank_account_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_bank_account_fields_bank")
+
+  @@index([bank_account_id], map: "idx_bank_account_fields_bank")
+}
+
+model bank_accounts {
+  id                  String                @id @db.VarChar(36)
+  country_code        String                @unique(map: "country_code") @db.Char(2)
+  is_enabled          Boolean?              @default(true)
+  updated_by          String?               @db.VarChar(36)
+  created_at          DateTime?             @default(now()) @db.Timestamp(0)
+  updated_at          DateTime?             @default(now()) @db.Timestamp(0)
+  bank_account_fields bank_account_fields[]
+
+  @@index([country_code, is_enabled], map: "idx_bank_country_enabled")
+}
+
+model bank_transfer_proofs {
+  id                String       @id @db.VarChar(36)
+  transaction_id    String       @unique(map: "uk_bank_transfer_proof_transaction") @db.VarChar(36)
+  user_id           String       @db.VarChar(36)
+  file_path         String       @db.VarChar(500)
+  original_filename String       @db.VarChar(255)
+  mime_type         String?      @db.VarChar(100)
+  file_size         Int?
+  sha256_hash       String       @db.VarChar(64)
+  uploaded_at       DateTime?    @default(now()) @db.Timestamp(0)
+  deleted_at        DateTime?    @db.Timestamp(0)
+  transactions      transactions @relation(fields: [transaction_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_bank_transfer_proof_tx")
+  users             users        @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_bank_transfer_proof_user")
+
+  @@index([user_id], map: "idx_bank_transfer_proof_user")
+}
+
+model investor_accounts {
+  id                   String                           @id @db.VarChar(36)
+  user_id              String                           @unique(map: "user_id") @db.VarChar(36)
+  account_status       investor_accounts_account_status @default(pending)
+  balance              Decimal                          @default(0.00) @db.Decimal(15, 2)
+  equity               Decimal                          @default(0.00) @db.Decimal(15, 2)
+  floating_profit_loss Decimal                          @default(0.00) @db.Decimal(15, 2)
+  total_profit_loss    Decimal                          @default(0.00) @db.Decimal(15, 2)
+  approved_at          DateTime?                        @db.Timestamp(0)
+  created_at           DateTime?                        @default(now()) @db.Timestamp(0)
+  updated_at           DateTime?                        @default(now()) @db.Timestamp(0)
+  users                users                            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_investor_account_user")
+
+  @@index([account_status], map: "idx_investor_status")
+}
+
+model kyc_audit_logs {
+  id              String                @id @db.VarChar(36)
+  kyc_document_id String                @db.VarChar(36)
+  user_id         String                @db.VarChar(36)
+  action          kyc_audit_logs_action
+  details         String?               @db.LongText
+  ip_address      String?               @db.VarChar(45)
+  user_agent      String?               @db.Text
+  created_at      DateTime?             @default(now()) @db.Timestamp(0)
+  kyc_documents   kyc_documents         @relation(fields: [kyc_document_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kyc_audit_logs_ibfk_1")
+  users           users                 @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kyc_audit_logs_ibfk_2")
+
+  @@index([action], map: "idx_action")
+  @@index([kyc_document_id], map: "idx_kyc_document_id")
+  @@index([user_id], map: "idx_user_id")
+}
+
+model kyc_documents {
+  id                                     String                       @id @db.VarChar(36)
+  user_id                                String                       @db.VarChar(36)
+  document_type                          kyc_documents_document_type
+  original_filename                      String                       @db.VarChar(255)
+  encrypted_file_path                    String                       @db.VarChar(500)
+  iv                                     String                       @db.VarChar(64)
+  auth_tag                               String                       @db.VarChar(64)
+  status                                 kyc_documents_status?        @default(PENDING)
+  extracted_data                         String?                      @db.LongText
+  auto_score                             Int?                         @default(0)
+  admin_comment                          String?                      @db.Text
+  reviewed_by                            String?                      @db.VarChar(36)
+  reviewed_at                            DateTime?                    @db.Timestamp(0)
+  created_at                             DateTime?                    @default(now()) @db.Timestamp(0)
+  updated_at                             DateTime?                    @default(now()) @db.Timestamp(0)
+  document_side                          kyc_documents_document_side? @default(single)
+  kyc_audit_logs                         kyc_audit_logs[]
+  users_kyc_documents_user_idTousers     users                        @relation("kyc_documents_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kyc_documents_ibfk_1")
+  users_kyc_documents_reviewed_byTousers users?                       @relation("kyc_documents_reviewed_byTousers", fields: [reviewed_by], references: [id], onUpdate: Restrict, map: "kyc_documents_ibfk_2")
+
+  @@index([created_at], map: "idx_created_at")
+  @@index([status], map: "idx_status")
+  @@index([user_id], map: "idx_user_id")
+  @@index([reviewed_by], map: "reviewed_by")
+}
+
+model kyc_profiles {
+  id                                    String                                 @id @db.VarChar(36)
+  user_id                               String                                 @unique(map: "unique_user_profile") @db.VarChar(36)
+  date_of_birth                         DateTime?                              @db.Date
+  place_of_birth                        String?                                @db.VarChar(100)
+  gender                                kyc_profiles_gender?                   @default(other)
+  nationality                           String?                                @db.VarChar(100)
+  country_of_residence                  String?                                @db.VarChar(100)
+  address_line1                         String?                                @db.VarChar(255)
+  address_line2                         String?                                @db.VarChar(255)
+  city                                  String?                                @db.VarChar(100)
+  state                                 String?                                @db.VarChar(100)
+  postal_code                           String?                                @db.VarChar(20)
+  country                               String?                                @db.VarChar(100)
+  phone_number                          String?                                @db.VarChar(20)
+  mobile_number                         String?                                @db.VarChar(20)
+  employment_status                     kyc_profiles_employment_status?        @default(employed)
+  occupation                            String?                                @db.VarChar(100)
+  employer_name                         String?                                @db.VarChar(100)
+  employer_address                      String?                                @db.VarChar(255)
+  employer_phone                        String?                                @db.VarChar(20)
+  years_in_employment                   Int?                                   @default(0)
+  monthly_income                        Decimal?                               @default(0.00) @db.Decimal(15, 2)
+  annual_income                         Decimal?                               @default(0.00) @db.Decimal(15, 2)
+  income_currency                       String?                                @default("USD") @db.VarChar(10)
+  source_of_funds                       kyc_profiles_source_of_funds?          @default(salary)
+  other_source_of_funds                 String?                                @db.VarChar(255)
+  trading_experience_years              Int?                                   @default(0)
+  trading_experience_level              kyc_profiles_trading_experience_level? @default(beginner)
+  investment_knowledge                  kyc_profiles_investment_knowledge?     @default(basic)
+  risk_tolerance                        kyc_profiles_risk_tolerance?           @default(medium)
+  politically_exposed_person            Boolean?                               @default(false)
+  pep_details                           String?                                @db.Text
+  us_citizen_or_resident                Boolean?                               @default(false)
+  tax_identification_number             String?                                @db.VarChar(50)
+  social_security_number                String?                                @db.VarChar(50)
+  account_purpose                       kyc_profiles_account_purpose?          @default(trading)
+  other_account_purpose                 String?                                @db.VarChar(255)
+  estimated_annual_deposit              Decimal?                               @default(0.00) @db.Decimal(15, 2)
+  estimated_annual_withdrawal           Decimal?                               @default(0.00) @db.Decimal(15, 2)
+  proof_of_address_uploaded             Boolean?                               @default(false)
+  proof_of_income_uploaded              Boolean?                               @default(false)
+  profile_status                        kyc_profiles_profile_status?           @default(DRAFT)
+  submitted_at                          DateTime?                              @db.Timestamp(0)
+  reviewed_by                           String?                                @db.VarChar(36)
+  reviewed_at                           DateTime?                              @db.Timestamp(0)
+  review_notes                          String?                                @db.Text
+  created_at                            DateTime?                              @default(now()) @db.Timestamp(0)
+  updated_at                            DateTime?                              @default(now()) @db.Timestamp(0)
+  primary_phone_country_code            String?                                @default("+1") @db.VarChar(5)
+  primary_phone_number                  String?                                @db.VarChar(20)
+  secondary_phone_country_code          String?                                @db.VarChar(5)
+  secondary_phone_number                String?                                @db.VarChar(20)
+  users_kyc_profiles_user_idTousers     users                                  @relation("kyc_profiles_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kyc_profiles_ibfk_1")
+  users_kyc_profiles_reviewed_byTousers users?                                 @relation("kyc_profiles_reviewed_byTousers", fields: [reviewed_by], references: [id], onUpdate: Restrict, map: "kyc_profiles_ibfk_2")
+
+  @@index([created_at], map: "idx_created_at")
+  @@index([profile_status], map: "idx_profile_status")
+  @@index([reviewed_by], map: "reviewed_by")
+}
+
+model kyc_records {
+  id               String                 @id @db.VarChar(36)
+  user_id          String                 @unique(map: "user_id") @db.VarChar(36)
+  customer_name    String?                @db.VarChar(255)
+  email            String                 @db.VarChar(255)
+  country          String?                @db.VarChar(100)
+  kyc_status       kyc_records_kyc_status @default(Not_Submitted)
+  rejection_reason String?                @db.Text
+  aml_status       kyc_records_aml_status @default(review)
+  full_kyc_details String?                @db.LongText
+  reviewed_by      String?                @db.VarChar(36)
+  reviewed_at      DateTime?              @db.Timestamp(0)
+  created_at       DateTime?              @default(now()) @db.Timestamp(0)
+  updated_at       DateTime?              @default(now()) @db.Timestamp(0)
+  admin_users      admin_users?           @relation(fields: [reviewed_by], references: [id], onUpdate: Restrict, map: "fk_kyc_record_reviewer")
+  users            users                  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_kyc_record_user")
+
+  @@index([reviewed_by], map: "fk_kyc_record_reviewer")
+  @@index([email], map: "idx_kyc_record_email")
+  @@index([kyc_status], map: "idx_kyc_record_status")
+}
+
+model migration_runs {
+  migration_key String    @id @db.VarChar(128)
+  executed_at   DateTime? @default(now()) @db.Timestamp(0)
+}
+
+model otp_daily_limits {
+  id    String   @id @db.VarChar(36)
+  email String   @db.VarChar(255)
+  date  DateTime @db.Date
+  count Int?     @default(0)
+
+  @@unique([email, date], map: "unique_email_date")
+}
+
+model otp_verifications {
+  id           String                     @id @db.VarChar(36)
+  email        String                     @db.VarChar(255)
+  otp_hash     String                     @db.VarChar(255)
+  purpose      otp_verifications_purpose? @default(registration)
+  attempts     Int?                       @default(0)
+  max_attempts Int?                       @default(3)
+  expires_at   DateTime                   @db.Timestamp(0)
+  created_at   DateTime?                  @default(now()) @db.Timestamp(0)
+
+  @@index([email, purpose], map: "idx_email_purpose")
+  @@index([expires_at], map: "idx_expires")
+}
+
+model payment_gateway_configs {
+  id                   String                               @id @db.VarChar(36)
+  gateway_code         payment_gateway_configs_gateway_code @unique(map: "gateway_code")
+  is_enabled           Boolean?                             @default(false)
+  public_key           String?                              @db.VarChar(255)
+  secret_key_encrypted String?                              @db.Text
+  secret_key_iv        String?                              @db.VarChar(64)
+  extra_config         String?                              @db.LongText
+  updated_by           String?                              @db.VarChar(36)
+  created_at           DateTime?                            @default(now()) @db.Timestamp(0)
+  updated_at           DateTime?                            @default(now()) @db.Timestamp(0)
+
+  @@index([is_enabled], map: "idx_gateway_enabled")
+}
+
+model risk_profiles {
+  id          String                   @id @db.VarChar(36)
+  user_id     String                   @unique(map: "user_id") @db.VarChar(36)
+  risk_input  risk_profiles_risk_input @default(low)
+  risk_score  Int?                     @default(0)
+  aml_status  risk_profiles_aml_status @default(review)
+  notes       String?                  @db.Text
+  updated_by  String?                  @db.VarChar(36)
+  created_at  DateTime?                @default(now()) @db.Timestamp(0)
+  updated_at  DateTime?                @default(now()) @db.Timestamp(0)
+  admin_users admin_users?             @relation(fields: [updated_by], references: [id], onUpdate: Restrict, map: "fk_risk_updated_by")
+  users       users                    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_risk_user")
+
+  @@index([updated_by], map: "fk_risk_updated_by")
+  @@index([aml_status], map: "idx_aml_status")
+  @@index([risk_input], map: "idx_risk_input")
+}
+
+model trading_accounts {
+  id         String                 @id @db.VarChar(36)
+  user_id    String?                @db.VarChar(36)
+  mode       trading_accounts_mode?
+  type       String?                @db.VarChar(50)
+  currency   String?                @db.VarChar(10)
+  leverage   String?                @db.VarChar(10)
+  status     String?                @db.VarChar(20)
+  created_at DateTime?              @default(now()) @db.Timestamp(0)
+}
+
+model transactions {
+  id                   String                         @id @db.VarChar(36)
+  transaction_number   String?                        @unique(map: "uk_transactions_transaction_number") @db.VarChar(15)
+  user_id              String                         @db.VarChar(36)
+  wallet_id            String?                        @db.VarChar(36)
+  type                 transactions_type
+  amount               Decimal                        @db.Decimal(15, 2)
+  currency             String?                        @default("USD") @db.VarChar(10)
+  status               transactions_status?           @default(pending)
+  payment_id           String?                        @db.VarChar(255)
+  session_id           String?                        @db.VarChar(255)
+  payment_provider     transactions_payment_provider?
+  payment_method       transactions_payment_method?
+  country_code         String?                        @db.Char(2)
+  stripe_payment_id    String?                        @db.VarChar(255)
+  stripe_session_id    String?                        @db.VarChar(255)
+  description          String?                        @db.Text
+  review_reason        String?                        @db.Text
+  reviewed_by          String?                        @db.VarChar(36)
+  reviewed_at          DateTime?                      @db.Timestamp(0)
+  metadata             String?                        @db.LongText
+  created_at           DateTime?                      @default(now()) @db.Timestamp(0)
+  updated_at           DateTime?                      @default(now()) @db.Timestamp(0)
+  bank_transfer_proofs bank_transfer_proofs?
+  users                users                          @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "transactions_ibfk_1")
+  wallets              wallets?                       @relation(fields: [wallet_id], references: [id], onUpdate: Restrict, map: "transactions_ibfk_2")
+
+  @@index([status], map: "idx_status")
+  @@index([stripe_payment_id], map: "idx_stripe_id")
+  @@index([payment_id], map: "idx_transactions_payment_id")
+  @@index([payment_provider, status, created_at], map: "idx_transactions_provider_status")
+  @@index([type], map: "idx_type")
+  @@index([user_id], map: "idx_user_id")
+  @@index([wallet_id], map: "transactions_ibfk_2")
+}
+
+model user_access_control {
+  id                  String                                  @id @db.VarChar(36)
+  zoho_user_id        String?                                 @unique(map: "zoho_user_id") @db.VarChar(128)
+  email               String                                  @unique(map: "email") @db.VarChar(255)
+  login_access_status user_access_control_login_access_status @default(allowed)
+  updated_by          String?                                 @db.VarChar(36)
+  created_at          DateTime?                               @default(now()) @db.Timestamp(0)
+  updated_at          DateTime?                               @default(now()) @db.Timestamp(0)
+  admin_users         admin_users?                            @relation(fields: [updated_by], references: [id], onUpdate: Restrict, map: "fk_user_access_updated_by")
+
+  @@index([updated_by], map: "fk_user_access_updated_by")
+  @@index([login_access_status], map: "idx_user_access_status")
+}
+
+model user_roles {
+  id           String          @id @db.VarChar(36)
+  zoho_user_id String?         @unique(map: "zoho_user_id") @db.VarChar(128)
+  email        String          @unique(map: "email") @db.VarChar(255)
+  role         user_roles_role @default(accounts)
+  updated_by   String?         @db.VarChar(36)
+  created_at   DateTime?       @default(now()) @db.Timestamp(0)
+  updated_at   DateTime?       @default(now()) @db.Timestamp(0)
+  admin_users  admin_users?    @relation(fields: [updated_by], references: [id], onUpdate: Restrict, map: "fk_user_roles_updated_by")
+
+  @@index([updated_by], map: "fk_user_roles_updated_by")
+  @@index([role], map: "idx_user_roles_role")
+}
+
+model user_sessions {
+  id         String    @id @db.VarChar(36)
+  user_id    String    @db.VarChar(36)
+  jwt_id     String    @unique(map: "jwt_id") @db.VarChar(128)
+  token_hash String    @db.VarChar(255)
+  ip_address String?   @db.VarChar(45)
+  user_agent String?   @db.Text
+  expires_at DateTime  @db.Timestamp(0)
+  revoked_at DateTime? @db.Timestamp(0)
+  created_at DateTime? @default(now()) @db.Timestamp(0)
+  updated_at DateTime? @default(now()) @db.Timestamp(0)
+
+  @@index([expires_at], map: "idx_user_sessions_expires_at")
+  @@index([user_id], map: "idx_user_sessions_user_id")
+}
+
+model users {
+  id                                             String                 @id @db.VarChar(36)
+  first_name                                     String?                @db.VarChar(100)
+  last_name                                      String?                @db.VarChar(100)
+  email                                          String                 @unique(map: "email") @db.VarChar(255)
+  password_hash                                  String?                @db.VarChar(255)
+  mobile                                         String?                @db.VarChar(20)
+  google_id                                      String?                @db.VarChar(255)
+  is_2fa_enabled                                 Boolean?               @default(false)
+  profile_completed                              Boolean?               @default(false)
+  created_at                                     DateTime?              @default(now()) @db.Timestamp(0)
+  is_verified                                    Boolean?               @default(false)
+  password_set                                   Boolean?               @default(true)
+  avatar_url                                     String?                @db.VarChar(500)
+  provider                                       String?                @default("local") @db.VarChar(50)
+  email_verified                                 Boolean?               @default(false)
+  verified_at                                    DateTime?              @db.Timestamp(0)
+  two_fa_secret_encrypted                        String?                @db.Text
+  two_fa_secret_iv                               String?                @db.VarChar(64)
+  two_fa_temp_secret_encrypted                   String?                @db.Text
+  two_fa_temp_secret_iv                          String?                @db.VarChar(64)
+  two_fa_temp_expires_at                         DateTime?              @db.Timestamp(0)
+  account_type                                   users_account_type     @default(trader)
+  auth_version                                   Int                    @default(1)
+  bank_transfer_proofs                           bank_transfer_proofs[]
+  investor_accounts                              investor_accounts?
+  kyc_audit_logs                                 kyc_audit_logs[]
+  kyc_documents_kyc_documents_user_idTousers     kyc_documents[]        @relation("kyc_documents_user_idTousers")
+  kyc_documents_kyc_documents_reviewed_byTousers kyc_documents[]        @relation("kyc_documents_reviewed_byTousers")
+  kyc_profiles_kyc_profiles_user_idTousers       kyc_profiles?          @relation("kyc_profiles_user_idTousers")
+  kyc_profiles_kyc_profiles_reviewed_byTousers   kyc_profiles[]         @relation("kyc_profiles_reviewed_byTousers")
+  kyc_records                                    kyc_records?
+  risk_profiles                                  risk_profiles?
+  transactions                                   transactions[]
+  wallets                                        wallets?
+}
+
+model wallets {
+  id           String         @id @db.VarChar(36)
+  user_id      String         @unique(map: "unique_user_wallet") @db.VarChar(36)
+  balance      Decimal?       @default(0.00) @db.Decimal(15, 2)
+  currency     String?        @default("USD") @db.VarChar(10)
+  created_at   DateTime?      @default(now()) @db.Timestamp(0)
+  updated_at   DateTime?      @default(now()) @db.Timestamp(0)
+  transactions transactions[]
+  users        users          @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "wallets_ibfk_1")
+}
+
+enum payment_gateway_configs_gateway_code {
+  stripe
+  tamara
+  razorpay
+}
+
+enum kyc_documents_document_type {
+  passport
+  national_id
+  national_id_front
+  national_id_back
+  drivers_license
+  residence_permit
+}
+
+enum investor_accounts_account_status {
+  pending
+  active
+  inactive
+  rejected
+}
+
+enum trading_accounts_mode {
+  REAL
+  DEMO
+}
+
+enum risk_profiles_risk_input {
+  low
+  medium
+  high
+}
+
+enum otp_verifications_purpose {
+  registration
+  password_reset
+  email_change
+}
+
+enum user_access_control_login_access_status {
+  allowed
+  blocked
+}
+
+enum kyc_audit_logs_action {
+  UPLOAD
+  AUTO_VERIFY
+  MANUAL_APPROVE
+  MANUAL_REJECT
+  DELETE
+}
+
+enum user_roles_role {
+  superadmin
+  admin
+  accounts
+}
+
+enum kyc_profiles_gender {
+  male
+  female
+  other
+}
+
+enum risk_profiles_aml_status {
+  clear
+  review
+  blocked
+}
+
+enum transactions_type {
+  deposit
+  withdrawal
+  trade_profit
+  trade_loss
+  bonus
+  fee
+}
+
+enum kyc_records_kyc_status {
+  Not_Submitted
+  Pending
+  Approved
+  Rejected
+}
+
+enum admin_users_role {
+  superadmin
+  admin
+  accounts
+}
+
+enum kyc_documents_status {
+  PENDING
+  AUTO_VERIFIED
+  APPROVED
+  REJECTED
+}
+
+enum kyc_records_aml_status {
+  clear
+  review
+  blocked
+}
+
+enum transactions_status {
+  pending
+  completed
+  failed
+  cancelled
+  Pending
+  Reviewing
+  Approved
+  Rejected
+}
+
+enum transactions_payment_provider {
+  stripe
+  tamara
+  razorpay
+  bank_transfer
+}
+
+enum transactions_payment_method {
+  card
+  bnpl
+  bank_transfer
+}
+
+enum kyc_documents_document_side {
+  front
+  back
+  single
+}
+
+enum kyc_profiles_employment_status {
+  employed
+  self_employed
+  unemployed
+  retired
+  student
+}
+
+enum users_account_type {
+  trader
+  investor
+}
+
+enum kyc_profiles_source_of_funds {
+  salary
+  business
+  investments
+  inheritance
+  savings
+  other
+}
+
+enum kyc_profiles_trading_experience_level {
+  beginner
+  intermediate
+  advanced
+  expert
+}
+
+enum kyc_profiles_investment_knowledge {
+  none
+  basic
+  good
+  excellent
+}
+
+enum kyc_profiles_risk_tolerance {
+  low
+  medium
+  high
+}
+
+enum kyc_profiles_account_purpose {
+  investment
+  savings
+  trading
+  hedging
+  speculation
+  other
+}
+
+enum kyc_profiles_profile_status {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}

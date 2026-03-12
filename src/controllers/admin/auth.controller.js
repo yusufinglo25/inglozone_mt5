@@ -1,5 +1,14 @@
 const adminAuthService = require('../../services/admin-auth.service')
 
+exports.getZohoAuthorizeUrl = async (req, res) => {
+  try {
+    const authUrl = adminAuthService.getZohoAuthorizeUrl(req.query.redirectUri)
+    return res.json({ success: true, authUrl })
+  } catch (error) {
+    return res.status(400).json({ error: error.message })
+  }
+}
+
 exports.login = async (req, res) => {
   try {
     const { code, redirectUri } = req.body
