@@ -236,6 +236,27 @@
 
 /**
  * @swagger
+ * /api/admin/auth/zoho/callback:
+ *   get:
+ *     tags: [Admin - Auth]
+ *     summary: Zoho OAuth callback handler (server-side token exchange + redirect to admin frontend)
+ *     security: []
+ *     parameters:
+ *       - in: query
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Authorization code returned by Zoho.
+ *     responses:
+ *       302:
+ *         description: Redirects to admin frontend callback URL with token or error query params.
+ *       400:
+ *         description: Missing code parameter
+ */
+
+/**
+ * @swagger
  * /api/admin/auth/login:
  *   post:
  *     tags: [Admin - Auth]

@@ -97,8 +97,11 @@ class AdminAuthService {
 
   getZohoAuthorizeUrl(redirectUri = null) {
     const clientId = String(process.env.ZOHO_CLIENT_ID || '').trim()
+    const defaultCallback = process.env.BASE_URL
+      ? `${String(process.env.BASE_URL).replace(/\/$/, '')}/api/admin/auth/zoho/callback`
+      : ''
     const resolvedRedirectUri = String(
-      redirectUri || process.env.ZOHO_REDIRECT_URI || ''
+      redirectUri || process.env.ZOHO_REDIRECT_URI || defaultCallback
     ).trim()
     const scope = String(
       process.env.ZOHO_OAUTH_SCOPE || 'ZOHOPEOPLE.forms.READ,ZOHOPEOPLE.employee.READ,aaaserver.profile.READ'

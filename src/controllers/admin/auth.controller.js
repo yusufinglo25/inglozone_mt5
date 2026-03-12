@@ -9,6 +9,40 @@ exports.getZohoAuthorizeUrl = async (req, res) => {
   }
 }
 
+exports.zohoCallback = async (req, res) => {
+  try {
+    const code = String(req.query.code || '').trim()
+    if (!code) {
+      return res.status(400).send('Zoho OAuth code is missing')
+    }
+
+    const redirectUri = process.env.ZOHO_REDIRECT_URI || `${process.env.BASE_URL || ''}/api/admin/auth/zoho/callback`
+    const result = await adminAuthService.loginWithZoho({
+      code,
+      redirectUri,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    })
+
+    const adminFrontendUrl = String(
+      process.env.ADMIN_FRONTEND_URL || 'https://inglo-zone-admin-panel.vercel.app'
+    ).replace(/\/$/, '')
+    const callbackUrl = new URL('/auth/zoho-callback', adminFrontendUrl)
+    callbackUrl.searchParams.set('token', result.token)
+    callbackUrl.searchParams.set('role', result.admin.role || '')
+    callbackUrl.searchParams.set('email', result.admin.email || '')
+
+    return res.redirect(callbackUrl.toString())
+  } catch (error) {
+    const adminFrontendUrl = String(
+      process.env.ADMIN_FRONTEND_URL || 'https://inglo-zone-admin-panel.vercel.app'
+    ).replace(/\/$/, '')
+    const callbackUrl = new URL('/auth/zoho-callback', adminFrontendUrl)
+    callbackUrl.searchParams.set('error', error.message || 'Zoho login failed')
+    return res.redirect(callbackUrl.toString())
+  }
+}
+
 exports.login = async (req, res) => {
   try {
     const { code, redirectUri } = req.body
