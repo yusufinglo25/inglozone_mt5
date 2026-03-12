@@ -168,6 +168,8 @@ const MANUALLY_DOCUMENTED_OPERATIONS = new Set([
   'POST /api/kyc/upload/back',
   'GET /api/kyc/documents/completeness',
   'GET /api/kyc/country-codes',
+  'GET /api/admin/auth/zoho/authorize-url',
+  'GET /api/admin/auth/zoho/callback',
   'POST /api/admin/auth/login',
   'POST /api/admin/auth/login-password',
   'POST /api/admin/auth/logout',
