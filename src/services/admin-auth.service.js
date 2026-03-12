@@ -161,7 +161,9 @@ class AdminAuthService {
       throw new Error('Invalid credentials')
     }
 
-    const [tokenRows] = await db.promise().query(
+    let zohoRefreshToken = null
+
+    const [ownTokenRows] = await db.promise().query(
       `SELECT zoho_refresh_token
        FROM admin_sessions
        WHERE admin_user_id = ?
@@ -171,8 +173,23 @@ class AdminAuthService {
        LIMIT 1`,
       [admin.id]
     )
+    zohoRefreshToken = ownTokenRows[0]?.zoho_refresh_token || null
 
-    const zohoRefreshToken = tokenRows[0]?.zoho_refresh_token || null
+    // Superadmins may bootstrap password-based sessions using a refresh token
+    // seeded by any other superadmin Zoho session.
+    if (!zohoRefreshToken && admin.role === 'superadmin') {
+      const [globalSuperRows] = await db.promise().query(
+        `SELECT s.zoho_refresh_token
+         FROM admin_sessions s
+         JOIN admin_users a ON a.id = s.admin_user_id
+         WHERE a.role = 'superadmin'
+           AND s.zoho_refresh_token IS NOT NULL
+           AND s.zoho_refresh_token <> ''
+         ORDER BY s.created_at DESC
+         LIMIT 1`
+      )
+      zohoRefreshToken = globalSuperRows[0]?.zoho_refresh_token || null
+    }
 
     return this.createAdminSession(admin, {
       ipAddress,
@@ -291,6 +308,21 @@ class AdminAuthService {
         [session.admin_user_id]
       )
       currentRefreshToken = tokenRows[0]?.zoho_refresh_token || null
+    }
+
+    // Global fallback is allowed only for superadmin sessions.
+    if (!currentRefreshToken && session.role === 'superadmin') {
+      const [globalSuperRows] = await db.promise().query(
+        `SELECT s.zoho_refresh_token
+         FROM admin_sessions s
+         JOIN admin_users a ON a.id = s.admin_user_id
+         WHERE a.role = 'superadmin'
+           AND s.zoho_refresh_token IS NOT NULL
+           AND s.zoho_refresh_token <> ''
+         ORDER BY s.created_at DESC
+         LIMIT 1`
+      )
+      currentRefreshToken = globalSuperRows[0]?.zoho_refresh_token || null
     }
 
     if (currentRefreshToken) {
