@@ -95,37 +95,6 @@ class AdminAuthService {
     })
   }
 
-  getZohoAuthorizeUrl(redirectUri = null) {
-    const clientId = String(process.env.ZOHO_CLIENT_ID || '').trim()
-    const defaultCallback = process.env.BASE_URL
-      ? `${String(process.env.BASE_URL).replace(/\/$/, '')}/api/admin/auth/zoho/callback`
-      : ''
-    const resolvedRedirectUri = String(
-      redirectUri || process.env.ZOHO_REDIRECT_URI || defaultCallback
-    ).trim()
-    const scope = String(
-      process.env.ZOHO_OAUTH_SCOPE || 'ZOHOPEOPLE.forms.READ,ZOHOPEOPLE.employee.READ,aaaserver.profile.READ'
-    ).trim()
-
-    if (!clientId) {
-      throw new Error('ZOHO_CLIENT_ID is not configured on backend')
-    }
-    if (!resolvedRedirectUri) {
-      throw new Error('ZOHO_REDIRECT_URI is not configured on backend')
-    }
-
-    const query = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: resolvedRedirectUri,
-      scope,
-      response_type: 'code',
-      access_type: 'offline',
-      prompt: 'consent'
-    })
-
-    return `${zohoService.accountsBaseUrl}/oauth/v2/auth?${query.toString()}`
-  }
-
   async loginWithPassword({ email, password, ipAddress, userAgent }) {
     const normalizedEmail = String(email || '').trim().toLowerCase()
     if (!normalizedEmail || !password) {
