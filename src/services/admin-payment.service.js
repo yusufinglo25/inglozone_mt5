@@ -2,6 +2,8 @@ const crypto = require('crypto')
 const fs = require('fs')
 const db = require('../config/db')
 const walletService = require('./wallet.service')
+const currencyService = require('./currency.service')
+const withdrawalService = require('./withdrawal.service')
 const { v4: uuidv4 } = require('uuid')
 
 class AdminPaymentService {
@@ -245,6 +247,30 @@ class AdminPaymentService {
     return { success: true }
   }
 
+  async getSupportedCurrencyCountries() {
+    return currencyService.getSupportedCountries()
+  }
+
+  async listCurrencyRates({ activeOnly = false } = {}) {
+    return currencyService.listCurrencyRates({ activeOnly })
+  }
+
+  async upsertCurrencyRate({ id = null, countryCode, countryName, currencyCode, usdRate, updatedBy }) {
+    return currencyService.upsertCurrencyRate({
+      id,
+      countryCode,
+      countryName,
+      currencyCode,
+      usdRate,
+      updatedBy
+    })
+  }
+
+  async updateCurrencyRateStatus({ id, isActive, updatedBy }) {
+    await currencyService.updateCurrencyRateStatus({ id, isActive, updatedBy })
+    return { success: true }
+  }
+
   async getReviewingBankTransfers({ page = 1, limit = 20 }) {
     const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100)
     const safePage = Math.max(parseInt(page, 10) || 1, 1)
@@ -369,6 +395,22 @@ class AdminPaymentService {
     }
 
     return { success: true }
+  }
+
+  async listWithdrawals({ page = 1, limit = 20, status = null } = {}) {
+    return withdrawalService.listAdminWithdrawals({ page, limit, status })
+  }
+
+  async getWithdrawalDetails(transactionId) {
+    return withdrawalService.getAdminWithdrawalDetails(transactionId)
+  }
+
+  async approveWithdrawal(transactionId, adminId) {
+    return withdrawalService.approveWithdrawal(transactionId, adminId)
+  }
+
+  async completeWithdrawal(transactionId, adminId, referenceNumber) {
+    return withdrawalService.completeWithdrawal(transactionId, adminId, referenceNumber)
   }
 }
 

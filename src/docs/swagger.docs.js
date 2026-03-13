@@ -1054,7 +1054,7 @@
  *   post:
  *     tags: [Customer - Wallet]
  *     summary: Create Stripe checkout session for wallet deposit
- *     description: Amount is provided in AED and converted to USD internally. Non-approved KYC users are capped to a maximum wallet exposure of 5000 USD (current balance + pending deposits + new deposit). Fully approved KYC users have unlimited deposits.
+ *     description: Amount is provided in USD. The API stores immutable converted local amount and currency snapshot for transaction history.
  *     requestBody:
  *       required: true
  *       content:
@@ -1075,7 +1075,9 @@
  *                 sessionId: cs_test_123
  *                 url: https://checkout.stripe.com/c/pay/cs_test_123
  *                 amountUSD: 100
- *                 amountAED: 366
+ *                 convertedAmount: 366
+ *                 currencyCode: AED
+ *                 usdToLocalRate: 3.66
  *                 transactionId: ING000000000001
  *       400:
  *         description: Validation or business-rule error
@@ -1299,7 +1301,7 @@
  *   schemas:
  *     RegisterRequest:
  *       type: object
- *       required: [firstName, lastName, email, password]
+ *       required: [firstName, lastName, email, password, accountType]
  *       properties:
  *         firstName:
  *           type: string
@@ -1316,6 +1318,14 @@
  *           minLength: 8
  *           description: Must contain at least one uppercase letter, one lowercase letter, and one special character.
  *           example: Strong@123
+ *         accountType:
+ *           type: string
+ *           enum: [trader, investor]
+ *           example: trader
+ *         registrationCountryCode:
+ *           type: string
+ *           description: ISO-2 country code locked at registration.
+ *           example: AE
  *
  *     VerifyOtpRequest:
  *       type: object
@@ -1421,8 +1431,8 @@
  *           type: number
  *           format: float
  *           minimum: 0.01
- *           description: Deposit amount in AED.
- *           example: 366
+ *           description: Deposit amount in USD.
+ *           example: 100
  *
  *     WalletVerifyRequest:
  *       type: object
@@ -1463,7 +1473,7 @@
  *   post:
  *     tags: [Customer - Wallet]
  *     summary: Create Tamara checkout for wallet deposit
- *     description: Amount is provided in AED. Backend creates a pending USD wallet transaction and returns Tamara checkout URL.
+ *     description: Amount is provided in USD. Backend converts to local AED using the stored country rate and persists both values.
  *     requestBody:
  *       required: true
  *       content:
@@ -1474,7 +1484,7 @@
  *             properties:
  *               amount:
  *                 type: number
- *                 example: 366
+ *                 example: 100
  *     responses:
  *       200:
  *         description: Tamara checkout created
@@ -1489,8 +1499,9 @@
  *                 checkoutId: chk_123
  *                 checkoutUrl: https://checkout.tamara.co/...
  *                 status: new
- *                 amountAED: 366
  *                 amountUSD: 100
+ *                 convertedAmount: 366
+ *                 currencyCode: AED
  */
 
 /**
@@ -1531,7 +1542,7 @@
  * /api/wallet/payment-methods:
  *   get:
  *     tags: [Customer - Wallet]
- *     summary: Get payment methods for current user based on detected country
+ *     summary: Get payment methods for current user based on registered country
  *     responses:
  *       200:
  *         description: Payment methods list
@@ -1542,7 +1553,7 @@
  * /api/wallet/razorpay/deposit:
  *   post:
  *     tags: [Customer - Wallet]
- *     summary: Create Razorpay order for India users
+ *     summary: Create Razorpay order for India users from USD amount
  *     requestBody:
  *       required: true
  *       content:
@@ -1553,8 +1564,8 @@
  *             properties:
  *               amount:
  *                 type: number
- *                 example: 5000
- *                 description: Amount in INR
+ *                 example: 100
+ *                 description: Amount in USD
  *     responses:
  *       200:
  *         description: Razorpay order created
@@ -1592,7 +1603,7 @@
  * /api/wallet/bank-transfer/deposit:
  *   post:
  *     tags: [Customer - Wallet]
- *     summary: Create bank transfer wallet transaction (Pending)
+ *     summary: Create bank transfer wallet transaction (Pending) from USD amount
  *     requestBody:
  *       required: true
  *       content:
@@ -1603,7 +1614,7 @@
  *             properties:
  *               amount:
  *                 type: number
- *                 example: 250
+ *                 example: 100
  *     responses:
  *       200:
  *         description: Bank transfer transaction created
@@ -1646,6 +1657,178 @@
  *     responses:
  *       200:
  *         description: Proof uploaded and status moved to Reviewing
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/countries:
+ *   get:
+ *     tags: [Admin - Payments]
+ *     summary: Get backend-supported countries for currency setup dropdown
+ *     responses:
+ *       200:
+ *         description: Country list fetched
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/currency-rates:
+ *   get:
+ *     tags: [Admin - Payments]
+ *     summary: List admin-managed USD conversion rates by country
+ *     responses:
+ *       200:
+ *         description: Currency rates fetched
+ *   post:
+ *     tags: [Admin - Payments]
+ *     summary: Create new country currency rate
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [countryCode, countryName, currencyCode, usdRate]
+ *             properties:
+ *               countryCode:
+ *                 type: string
+ *                 example: AE
+ *               countryName:
+ *                 type: string
+ *                 example: United Arab Emirates
+ *               currencyCode:
+ *                 type: string
+ *                 example: AED
+ *               usdRate:
+ *                 type: number
+ *                 example: 3.66
+ *     responses:
+ *       200:
+ *         description: Currency rate saved
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/currency-rates/{currencyRateId}:
+ *   patch:
+ *     tags: [Admin - Payments]
+ *     summary: Update an existing currency rate
+ *     parameters:
+ *       - in: path
+ *         name: currencyRateId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Currency rate updated
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/currency-rates/{currencyRateId}/status:
+ *   patch:
+ *     tags: [Admin - Payments]
+ *     summary: Enable/disable a currency rate record
+ *     parameters:
+ *       - in: path
+ *         name: currencyRateId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [isActive]
+ *             properties:
+ *               isActive:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Currency rate status updated
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/withdrawals:
+ *   get:
+ *     tags: [Admin - Payments]
+ *     summary: List withdrawal requests for admin review
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         required: false
+ *         schema:
+ *           type: string
+ *           example: Pending
+ *     responses:
+ *       200:
+ *         description: Withdrawal queue fetched
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/withdrawals/{transactionId}:
+ *   get:
+ *     tags: [Admin - Payments]
+ *     summary: Get withdrawal request details
+ *     parameters:
+ *       - in: path
+ *         name: transactionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Withdrawal details fetched
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/withdrawals/{transactionId}/approve:
+ *   post:
+ *     tags: [Admin - Payments]
+ *     summary: Approve withdrawal and deduct USD balance
+ *     parameters:
+ *       - in: path
+ *         name: transactionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Withdrawal approved
+ */
+
+/**
+ * @swagger
+ * /api/admin/payments/withdrawals/{transactionId}/complete:
+ *   post:
+ *     tags: [Admin - Payments]
+ *     summary: Complete withdrawal with external reference number
+ *     parameters:
+ *       - in: path
+ *         name: transactionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [referenceNumber]
+ *             properties:
+ *               referenceNumber:
+ *                 type: string
+ *                 example: WD-REF-1000001
+ *     responses:
+ *       200:
+ *         description: Withdrawal completed
  */
 
 /**

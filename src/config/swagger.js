@@ -124,18 +124,92 @@ function toOpenApiPath(pathname) {
   return pathname.replace(/:([A-Za-z0-9_]+)/g, '{$1}')
 }
 
-function resolveRoleTag(openApiPath) {
+function resolveRoleModuleTag(openApiPath) {
   if (openApiPath === '/health') return 'Health'
-  if (openApiPath.startsWith('/api/admin')) return 'Admin APIs'
-  if (openApiPath.startsWith('/api/investor')) return 'Investor APIs'
-  if (openApiPath.startsWith('/api/accounts')) return 'Trader APIs'
 
-  const sharedPrefixes = ['/api/auth', '/api/wallet', '/api/user', '/api/settings', '/api/kyc']
-  if (sharedPrefixes.some((prefix) => openApiPath.startsWith(prefix))) {
-    return 'Trader + Investor APIs'
+  let role = 'Trader + Investor APIs'
+  if (openApiPath.startsWith('/api/admin')) role = 'Admin APIs'
+  else if (openApiPath.startsWith('/api/investor')) role = 'Investor APIs'
+  else if (openApiPath.startsWith('/api/accounts')) role = 'Trader APIs'
+
+  let module = 'General APIs'
+  if (openApiPath.includes('/withdraw') || openApiPath.includes('/withdrawal')) {
+    module = 'Withdrawal APIs'
+  } else if (
+    openApiPath.includes('/deposit') ||
+    openApiPath.includes('/payment-methods') ||
+    openApiPath.includes('/bank-transfer') ||
+    openApiPath.includes('/gateway') ||
+    openApiPath.includes('/bank-account')
+  ) {
+    module = 'Deposit APIs'
+  } else if (openApiPath.includes('/currency') || openApiPath.includes('/countries')) {
+    module = 'Currency APIs'
+  } else if (openApiPath.includes('/transaction')) {
+    module = 'Transaction APIs'
+  } else if (openApiPath.includes('/kyc')) {
+    module = 'KYC APIs'
+  } else if (openApiPath.includes('/auth')) {
+    module = 'Auth APIs'
+  } else if (openApiPath.includes('/settings')) {
+    module = 'Settings APIs'
+  } else if (openApiPath.includes('/user')) {
+    module = 'User APIs'
+  } else if (openApiPath.includes('/investor')) {
+    module = 'Investor APIs'
+  } else if (openApiPath.includes('/dashboard')) {
+    module = 'Dashboard APIs'
   }
 
-  return 'Trader + Investor APIs'
+  return `${role} - ${module}`
+}
+
+const ROLE_GROUPS = [
+  'Admin APIs',
+  'Trader APIs',
+  'Investor APIs',
+  'Trader + Investor APIs'
+]
+
+const MODULE_GROUPS = [
+  'Auth APIs',
+  'Currency APIs',
+  'Deposit APIs',
+  'Withdrawal APIs',
+  'Transaction APIs',
+  'KYC APIs',
+  'Settings APIs',
+  'User APIs',
+  'Investor APIs',
+  'Dashboard APIs',
+  'General APIs'
+]
+
+function buildRoleModuleTags() {
+  const descriptions = {
+    'Auth APIs': 'Authentication and session APIs',
+    'Currency APIs': 'Country and currency conversion APIs',
+    'Deposit APIs': 'Deposit and payment processing APIs',
+    'Withdrawal APIs': 'Withdrawal request and processing APIs',
+    'Transaction APIs': 'Transaction history and details APIs',
+    'KYC APIs': 'KYC submission/review APIs',
+    'Settings APIs': 'Account settings and security APIs',
+    'User APIs': 'User profile and user management APIs',
+    'Investor APIs': 'Investor module APIs',
+    'Dashboard APIs': 'Dashboard and analytics APIs',
+    'General APIs': 'General APIs for the role'
+  }
+
+  const tags = []
+  for (const role of ROLE_GROUPS) {
+    for (const module of MODULE_GROUPS) {
+      tags.push({
+        name: `${role} - ${module}`,
+        description: `${role}: ${descriptions[module]}`
+      })
+    }
+  }
+  return tags
 }
 
 const MANUALLY_DOCUMENTED_OPERATIONS = new Set([
@@ -239,7 +313,7 @@ function buildAutoPathDocs() {
       }
 
       if (!paths[openApiPath][method]) {
-        const tag = resolveRoleTag(openApiPath)
+        const tag = resolveRoleModuleTag(openApiPath)
         paths[openApiPath][method] = {
           tags: [tag],
           summary: `Auto-generated documentation for ${method.toUpperCase()} ${openApiPath}`,
@@ -263,10 +337,7 @@ function getSwaggerSpec() {
       },
       tags: [
         { name: 'Health', description: 'System health endpoints' },
-        { name: 'Admin APIs', description: 'Admin-only APIs' },
-        { name: 'Trader APIs', description: 'Trader-only APIs' },
-        { name: 'Investor APIs', description: 'Investor-only APIs' },
-        { name: 'Trader + Investor APIs', description: 'Shared APIs available to both trader and investor accounts' }
+        ...buildRoleModuleTags()
       ],
       servers: [
         { url: process.env.BASE_URL || 'https://temp.inglozone.com' }
@@ -390,7 +461,7 @@ function getSwaggerSpec() {
   Object.entries(spec.paths || {}).forEach(([openApiPath, pathItem]) => {
     Object.entries(pathItem || {}).forEach(([method, operation]) => {
       if (!methodKeys.has(method) || !operation || typeof operation !== 'object') return
-      operation.tags = [resolveRoleTag(openApiPath)]
+      operation.tags = [resolveRoleModuleTag(openApiPath)]
     })
   })
 

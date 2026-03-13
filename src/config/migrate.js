@@ -18,6 +18,9 @@ const runMigrations = () => {
       google_id VARCHAR(255),
       account_type ENUM('trader','investor') NOT NULL DEFAULT 'trader',
       auth_version INT NOT NULL DEFAULT 1,
+      registration_country_code CHAR(2) DEFAULT 'AE',
+      registration_country_name VARCHAR(100) NULL,
+      registration_currency_code VARCHAR(10) DEFAULT 'USD',
       is_2fa_enabled BOOLEAN DEFAULT false,
       profile_completed BOOLEAN DEFAULT false,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -45,7 +48,7 @@ const runMigrations = () => {
         id VARCHAR(36) PRIMARY KEY,
         email VARCHAR(255) NOT NULL,
         otp_hash VARCHAR(255) NOT NULL,
-        purpose ENUM('registration', 'password_reset', 'email_change') DEFAULT 'registration',
+        purpose ENUM('registration', 'password_reset', 'email_change', 'withdrawal_request') DEFAULT 'registration',
         attempts INT DEFAULT 0,
         max_attempts INT DEFAULT 3,
         expires_at TIMESTAMP NOT NULL,
@@ -109,12 +112,17 @@ function createWalletTables() {
       transaction_number VARCHAR(15) NULL,
       user_id VARCHAR(36) NOT NULL,
       wallet_id VARCHAR(36),
+      withdrawal_account_id VARCHAR(36),
       type ENUM('deposit', 'withdrawal', 'trade_profit', 'trade_loss', 'bonus', 'fee') NOT NULL,
       amount DECIMAL(15, 2) NOT NULL,
+      local_amount DECIMAL(15, 2) NULL,
+      local_currency_code VARCHAR(10) NULL,
+      usd_to_local_rate DECIMAL(18, 6) NULL,
       currency VARCHAR(10) DEFAULT 'USD',
       status ENUM('pending', 'completed', 'failed', 'cancelled') DEFAULT 'pending',
       payment_id VARCHAR(255),
       session_id VARCHAR(255),
+      reference_number VARCHAR(128) NULL,
       description TEXT,
       metadata JSON,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -123,7 +131,8 @@ function createWalletTables() {
       UNIQUE KEY uk_transaction_number (transaction_number),
       INDEX idx_status (status),
       INDEX idx_type (type),
-      INDEX idx_payment_id (payment_id)
+      INDEX idx_payment_id (payment_id),
+      INDEX idx_reference_number (reference_number)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `
   
@@ -151,6 +160,7 @@ function createWalletTables() {
         // Payment extension tables and columns (Razorpay + Bank Transfer)
         runPaymentMigrations()
         runInvestorMigrations()
+        runCurrencyAndWithdrawalMigrations()
       }
     })
   })
@@ -243,6 +253,9 @@ function addForeignKeys() {
       { name: 'provider', type: 'VARCHAR(50) DEFAULT "local"' },
       { name: 'account_type', type: 'ENUM("trader","investor") NOT NULL DEFAULT "trader"' },
       { name: 'auth_version', type: 'INT NOT NULL DEFAULT 1' },
+      { name: 'registration_country_code', type: 'CHAR(2) DEFAULT "AE"' },
+      { name: 'registration_country_name', type: 'VARCHAR(100) NULL' },
+      { name: 'registration_currency_code', type: 'VARCHAR(10) DEFAULT "USD"' },
       { name: 'email_verified', type: 'BOOLEAN DEFAULT false' },
       { name: 'verified_at', type: 'TIMESTAMP DEFAULT NULL' }
     ]
@@ -896,10 +909,15 @@ function runPaymentMigrations() {
 function ensureTransactionPaymentColumns() {
   const transactionColumns = [
     { name: 'transaction_number', type: 'VARCHAR(15) NULL AFTER id' },
+    { name: 'withdrawal_account_id', type: 'VARCHAR(36) NULL AFTER wallet_id' },
+    { name: 'local_amount', type: 'DECIMAL(15, 2) NULL AFTER amount' },
+    { name: 'local_currency_code', type: 'VARCHAR(10) NULL AFTER local_amount' },
+    { name: 'usd_to_local_rate', type: 'DECIMAL(18, 6) NULL AFTER local_currency_code' },
     { name: 'payment_id', type: 'VARCHAR(255) NULL AFTER status' },
     { name: 'session_id', type: 'VARCHAR(255) NULL AFTER payment_id' },
-    { name: 'payment_provider', type: "ENUM('stripe','tamara','razorpay','bank_transfer') NULL AFTER status" },
-    { name: 'payment_method', type: "ENUM('card','bnpl','bank_transfer') NULL AFTER payment_provider" },
+    { name: 'reference_number', type: 'VARCHAR(128) NULL AFTER session_id' },
+    { name: 'payment_provider', type: "ENUM('stripe','tamara','razorpay','bank_transfer','manual_payout') NULL AFTER status" },
+    { name: 'payment_method', type: "ENUM('card','bnpl','bank_transfer','upi') NULL AFTER payment_provider" },
     { name: 'country_code', type: 'CHAR(2) NULL AFTER payment_method' },
     { name: 'review_reason', type: 'TEXT NULL AFTER description' },
     { name: 'reviewed_by', type: 'VARCHAR(36) NULL AFTER review_reason' },
@@ -921,6 +939,16 @@ function ensureTransactionPaymentColumns() {
             console.error('Error updating transactions.status enum:', enumErr.message)
           } else {
             db.query(
+              `ALTER TABLE transactions
+               MODIFY COLUMN payment_provider ENUM('stripe','tamara','razorpay','bank_transfer','manual_payout') NULL`,
+              () => {}
+            )
+            db.query(
+              `ALTER TABLE transactions
+               MODIFY COLUMN payment_method ENUM('card','bnpl','bank_transfer','upi') NULL`,
+              () => {}
+            )
+            db.query(
               `CREATE INDEX idx_transactions_provider_status
                ON transactions (payment_provider, status, created_at)`,
               () => {}
@@ -933,6 +961,16 @@ function ensureTransactionPaymentColumns() {
             db.query(
               `CREATE UNIQUE INDEX uk_transactions_transaction_number
                ON transactions (transaction_number)`,
+              () => {}
+            )
+            db.query(
+              `CREATE INDEX idx_transactions_withdrawal_account
+               ON transactions (withdrawal_account_id)`,
+              () => {}
+            )
+            db.query(
+              `CREATE INDEX idx_transactions_reference_number
+               ON transactions (reference_number)`,
               () => {}
             )
             console.log('Payment transaction columns verified')
@@ -1098,6 +1136,96 @@ function runInvestorMigrations() {
   })
 }
 
+function runCurrencyAndWithdrawalMigrations() {
+  const currencyRatesTable = `
+    CREATE TABLE IF NOT EXISTS country_currency_rates (
+      id VARCHAR(36) PRIMARY KEY,
+      country_code CHAR(2) NOT NULL UNIQUE,
+      country_name VARCHAR(100) NOT NULL,
+      currency_code VARCHAR(10) NOT NULL,
+      usd_rate DECIMAL(18, 6) NOT NULL,
+      is_active BOOLEAN DEFAULT true,
+      updated_by VARCHAR(36) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_currency_rate_country_enabled (country_code, is_active),
+      INDEX idx_currency_rate_currency_code (currency_code)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `
+
+  const withdrawalAccountsTable = `
+    CREATE TABLE IF NOT EXISTS user_withdrawal_accounts (
+      id VARCHAR(36) PRIMARY KEY,
+      user_id VARCHAR(36) NOT NULL,
+      country_code CHAR(2) NOT NULL,
+      method ENUM('upi', 'bank_transfer') NOT NULL,
+      label VARCHAR(100) NULL,
+      account_holder_name VARCHAR(150) NULL,
+      upi_id VARCHAR(150) NULL,
+      bank_name VARCHAR(150) NULL,
+      account_number VARCHAR(100) NULL,
+      ifsc_code VARCHAR(20) NULL,
+      iban VARCHAR(50) NULL,
+      is_default BOOLEAN DEFAULT false,
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_withdrawal_account_user_active (user_id, is_active),
+      INDEX idx_withdrawal_account_country_method (country_code, method),
+      CONSTRAINT fk_withdrawal_account_user
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `
+
+  db.query(currencyRatesTable, (currencyErr) => {
+    if (currencyErr) {
+      console.error('Error creating country_currency_rates:', currencyErr.message)
+      return
+    }
+
+    db.query(withdrawalAccountsTable, (accountErr) => {
+      if (accountErr) {
+        console.error('Error creating user_withdrawal_accounts:', accountErr.message)
+        return
+      }
+
+      db.query(
+        `ALTER TABLE otp_verifications
+         MODIFY COLUMN purpose ENUM('registration', 'password_reset', 'email_change', 'withdrawal_request') DEFAULT 'registration'`,
+        () => {}
+      )
+
+      db.query(
+        `SELECT COUNT(*) AS exists_flag
+         FROM information_schema.TABLE_CONSTRAINTS
+         WHERE CONSTRAINT_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'transactions'
+           AND CONSTRAINT_NAME = 'fk_transactions_withdrawal_account'`,
+        (fkErr, fkRows) => {
+          if (!fkErr && Number(fkRows[0]?.exists_flag || 0) === 0) {
+            db.query(
+              `ALTER TABLE transactions
+               ADD CONSTRAINT fk_transactions_withdrawal_account
+               FOREIGN KEY (withdrawal_account_id) REFERENCES user_withdrawal_accounts(id) ON DELETE SET NULL`,
+              () => {}
+            )
+          }
+        }
+      )
+
+      db.query(
+        `INSERT IGNORE INTO country_currency_rates
+         (id, country_code, country_name, currency_code, usd_rate, is_active)
+         VALUES
+         (UUID(), 'AE', 'United Arab Emirates', 'AED', 3.660000, true),
+         (UUID(), 'IN', 'India', 'INR', 83.500000, true),
+         (UUID(), 'US', 'United States', 'USD', 1.000000, true)`,
+        () => {}
+      )
+    })
+  })
+}
+
 function runPostUserMigrations(done = () => {}) {
   normalizeUserAndWalletIds(async () => {
     try {
@@ -1129,6 +1257,32 @@ function runPostUserMigrations(done = () => {}) {
           `UPDATE users
            SET auth_version = 1
            WHERE auth_version IS NULL OR auth_version < 1`
+        )
+      })
+      await runOneTimeMigration('users_registration_country_backfill_v1', async () => {
+        await db.promise().query(
+          `UPDATE users u
+           LEFT JOIN kyc_profiles kp ON kp.user_id = u.id
+           SET u.registration_country_code = CASE
+                 WHEN u.registration_country_code REGEXP '^[A-Za-z]{2}$' THEN UPPER(u.registration_country_code)
+                 WHEN UPPER(TRIM(COALESCE(kp.country_of_residence, ''))) IN ('IN', 'INDIA') THEN 'IN'
+                 WHEN UPPER(TRIM(COALESCE(kp.country_of_residence, ''))) IN ('AE', 'UAE', 'UNITED ARAB EMIRATES') THEN 'AE'
+                 WHEN UPPER(TRIM(COALESCE(kp.country_of_residence, ''))) IN ('US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA') THEN 'US'
+                 ELSE 'AE'
+               END,
+               u.registration_country_name = CASE
+                 WHEN u.registration_country_name IS NOT NULL AND TRIM(u.registration_country_name) <> '' THEN u.registration_country_name
+                 WHEN UPPER(TRIM(COALESCE(kp.country_of_residence, ''))) IN ('IN', 'INDIA') THEN 'India'
+                 WHEN UPPER(TRIM(COALESCE(kp.country_of_residence, ''))) IN ('AE', 'UAE', 'UNITED ARAB EMIRATES') THEN 'United Arab Emirates'
+                 WHEN UPPER(TRIM(COALESCE(kp.country_of_residence, ''))) IN ('US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA') THEN 'United States'
+                 ELSE 'United Arab Emirates'
+               END,
+               u.registration_currency_code = CASE
+                 WHEN UPPER(COALESCE(u.registration_currency_code, '')) IN ('AED', 'INR', 'USD') THEN UPPER(u.registration_currency_code)
+                 WHEN UPPER(COALESCE(u.registration_country_code, '')) = 'IN' THEN 'INR'
+                 WHEN UPPER(COALESCE(u.registration_country_code, '')) = 'US' THEN 'USD'
+                 ELSE 'AED'
+               END`
         )
       })
       await runOneTimeMigration('transactions_backfill_transaction_number_v1', backfillTransactionNumbersOnce)

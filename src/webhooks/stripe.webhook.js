@@ -45,59 +45,13 @@ async function handleCheckoutSessionCompleted(session) {
   try {
     console.log('Checkout session completed:', session.id)
     
-    const { userId, transactionId } = session.metadata
+    const { transactionId } = session.metadata
     
     if (!transactionId) {
       console.error('No transaction ID in session metadata')
       return
     }
-
-    // Update transaction status
-     db.query(
-       `UPDATE transactions 
-        SET status = 'Approved', 
-            payment_id = ?,
-            updated_at = NOW()
-        WHERE id = ? AND status IN ('pending','Pending')`,
-      [session.payment_intent, transactionId],
-      (err, result) => {
-        if (err) {
-          console.error('Error updating transaction:', err)
-          return
-        }
-
-        if (result.affectedRows > 0) {
-          // Update wallet balance
-          db.query(
-            `SELECT amount, user_id FROM transactions WHERE id = ?`,
-            [transactionId],
-            (err, results) => {
-              if (err || results.length === 0) {
-                console.error('Transaction not found:', err)
-                return
-              }
-
-              const { amount, user_id } = results[0]
-
-              db.query(
-                `UPDATE wallets 
-                 SET balance = balance + ?, 
-                     updated_at = NOW()
-                 WHERE user_id = ?`,
-                [amount, user_id],
-                (updateErr) => {
-                  if (updateErr) {
-                    console.error('Error updating wallet:', updateErr)
-                  } else {
-                    console.log(`Wallet updated for user ${user_id}: +${amount} USD`)
-                  }
-                }
-              )
-            }
-          )
-        }
-      }
-    )
+    await walletService.markTransactionCompleted(transactionId, session.payment_intent || null)
   } catch (error) {
     console.error('Error handling checkout session:', error)
   }

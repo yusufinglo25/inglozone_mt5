@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken')
 router.post('/register', controller.register) // Direct registration (optional)
 
 // NEW OTP REGISTRATION ROUTES
+router.get('/countries', controller.getRegistrationCountries)
 router.post('/register-with-otp', controller.registerWithOTP) // Step 1: Send OTP
 router.post('/verify-otp', controller.verifyOTP) // Step 2: Verify OTP
 router.post('/resend-otp', controller.resendOTP) // Resend OTP

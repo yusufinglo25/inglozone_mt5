@@ -5,6 +5,8 @@ const jwt = require('jsonwebtoken')
 const crypto = require('crypto')
 const path = require('path')
 const fs = require('fs')
+const emailService = require('./email.service')
+const currencyService = require('./currency.service')
 const {
   generateUniqueTransactionId,
   generateUniqueTransactionNumber
@@ -38,6 +40,12 @@ class WalletService {
     const decipher = crypto.createDecipheriv('aes-256-gcm', this.encryptorKey(), Buffer.from(ivHex, 'hex'))
     decipher.setAuthTag(authTag)
     return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8')
+  }
+
+  toMoney(value, decimals = 2) {
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric)) return 0
+    return Number(numeric.toFixed(decimals))
   }
 
   async getGatewayConfig(gatewayCode) {
@@ -85,28 +93,13 @@ class WalletService {
   }
 
   async resolveUserCountry(userId) {
-    const [rows] = await db.promise().query(
-      `SELECT kp.country_of_residence
-       FROM users u
-       LEFT JOIN kyc_profiles kp ON kp.user_id = u.id
-       WHERE u.id = ?
-       LIMIT 1`,
-      [userId]
-    )
-
-    const raw = String(rows[0]?.country_of_residence || '').trim().toUpperCase()
-    if (!raw) return String(process.env.DEFAULT_COUNTRY_CODE || 'AE').toUpperCase()
-    if (raw.length === 2) return raw
-    const aliases = {
-      INDIA: 'IN',
-      UAE: 'AE',
-      'UNITED ARAB EMIRATES': 'AE'
-    }
-    return aliases[raw] || raw.slice(0, 2)
+    const registration = await currencyService.getUserRegistrationCountry(userId)
+    return registration.countryCode
   }
 
   async getPaymentMethods(userId) {
     const countryCode = await this.resolveUserCountry(userId)
+    const displayCurrency = await currencyService.getUserDisplayCurrency(userId)
     const [bankRows] = await db.promise().query(
       `SELECT id FROM bank_accounts WHERE country_code = ? AND is_enabled = true LIMIT 1`,
       [countryCode]
@@ -138,7 +131,19 @@ class WalletService {
       methods.push({ code: 'bank_transfer', label: 'Bank Transfer', type: 'manual' })
     }
 
-    return { countryCode, methods }
+    return {
+      countryCode,
+      methods,
+      displayCurrency
+    }
+  }
+
+  async getUserCurrencyContext(userId) {
+    return currencyService.getUserDisplayCurrency(userId)
+  }
+
+  getSupportedCountries() {
+    return currencyService.getSupportedCountries()
   }
 
   getTamaraBaseUrl() {
@@ -191,6 +196,9 @@ class WalletService {
     if (transaction.status === 'completed' || transaction.status === 'Approved') {
       return { alreadyCompleted: true, transaction }
     }
+    if (transaction.type !== 'deposit') {
+      throw new Error('markTransactionCompleted only supports deposit transactions')
+    }
 
     await new Promise((resolve, reject) => {
       db.query(
@@ -215,6 +223,29 @@ class WalletService {
       )
     })
 
+    if (transaction.type === 'deposit') {
+      try {
+        const [userRows] = await db.promise().query(
+          `SELECT email, first_name AS firstName
+           FROM users
+           WHERE id = ?
+           LIMIT 1`,
+          [transaction.user_id]
+        )
+        if (userRows.length > 0) {
+          await emailService.sendDepositSuccessEmail(userRows[0].email, userRows[0].firstName || 'User', {
+            transactionNumber: transaction.transaction_number,
+            amountUSD: Number(transaction.amount),
+            localAmount: transaction.local_amount !== null ? Number(transaction.local_amount) : null,
+            localCurrencyCode: transaction.local_currency_code,
+            status: 'Approved'
+          })
+        }
+      } catch (error) {
+        console.error('Failed to send deposit success email:', error.message)
+      }
+    }
+
     return { alreadyCompleted: false, transaction }
   }
 
@@ -223,6 +254,16 @@ class WalletService {
     const cleaned = { ...record }
     delete cleaned.stripe_payment_id
     delete cleaned.stripe_session_id
+    if (cleaned.amount !== undefined && cleaned.amount !== null) cleaned.amount = Number(cleaned.amount)
+    if (cleaned.local_amount !== undefined && cleaned.local_amount !== null) cleaned.local_amount = Number(cleaned.local_amount)
+    if (cleaned.usd_to_local_rate !== undefined && cleaned.usd_to_local_rate !== null) cleaned.usd_to_local_rate = Number(cleaned.usd_to_local_rate)
+    if (typeof cleaned.metadata === 'string') {
+      try {
+        cleaned.metadata = JSON.parse(cleaned.metadata)
+      } catch (error) {
+        // keep raw metadata string for backward compatibility when malformed
+      }
+    }
     return cleaned
   }
 
@@ -284,97 +325,115 @@ class WalletService {
   }
 
   // Create deposit intent (Stripe)
-  async createDepositIntent(userId, amountAED) {
-    try {
-      const countryCode = await this.resolveUserCountry(userId)
-      if (countryCode !== 'AE') {
-        throw new Error('Stripe deposit is currently available only for UAE')
-      }
+  async createDepositIntent(userId, amountUSDInput) {
+    const countryCode = await this.resolveUserCountry(userId)
+    if (countryCode !== 'AE') {
+      throw new Error('Stripe deposit is currently available only for UAE')
+    }
 
-      // Convert AED to USD (1 USD = 3.66 AED)
-      const amountUSD = parseFloat((amountAED / 3.66).toFixed(2))
-      
-      if (amountUSD < 1) {
-        throw new Error('Minimum deposit amount is 3.66 AED (1 USD)')
-      }
+    const amountUSD = this.toMoney(amountUSDInput)
+    if (!Number.isFinite(amountUSD) || amountUSD <= 0) {
+      throw new Error('Valid USD amount is required')
+    }
+    if (amountUSD < 1) {
+      throw new Error('Minimum deposit amount is 1 USD')
+    }
 
-      // Get user email for Stripe
-      const user = await new Promise((resolve, reject) => {
-        db.query(
-          `SELECT email, first_name, last_name FROM users WHERE id = ?`,
-          [userId],
-          (err, results) => {
-            if (err || results.length === 0) return reject(new Error('User not found'))
-            resolve(results[0])
-          }
-        )
-      })
+    const conversion = await currencyService.createConversionSnapshot({
+      userId,
+      usdAmount: amountUSD
+    })
 
-      // Create transaction record
-      const transactionId = await generateUniqueTransactionId(db)
-      const transactionNumber = await generateUniqueTransactionNumber(db)
-      const wallet = await this.getWallet(userId)
-      
-      await new Promise((resolve, reject) => {
-        db.query(
-          `INSERT INTO transactions (id, transaction_number, user_id, wallet_id, type, amount, currency, status, payment_provider, payment_method, country_code, description)
-           VALUES (?, ?, ?, ?, 'deposit', ?, 'USD', 'Pending', 'stripe', 'card', ?, ?)`,
-          [transactionId, transactionNumber, userId, wallet.id, amountUSD, countryCode, `Deposit of ${amountAED} AED (${amountUSD} USD)`],
-          (err) => {
-            if (err) return reject(err)
-            resolve()
-          }
-        )
-      })
-
-      // Create Stripe checkout session
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ['card'],
-        line_items: [{
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: 'Wallet Deposit',
-              description: `Deposit ${amountUSD} USD to your Inglozone wallet`
-            },
-            unit_amount: Math.round(amountUSD * 100), // Stripe uses cents
-          },
-          quantity: 1,
-        }],
-        mode: 'payment',
-        success_url: `${process.env.FRONTEND_URL}/wallet/deposit/success?session_id={CHECKOUT_SESSION_ID}&transaction_id=${transactionId}`,
-        cancel_url: `${process.env.FRONTEND_URL}/wallet/deposit/cancel?transaction_id=${transactionId}`,
-        customer_email: user.email,
-        metadata: {
-          userId,
-          transactionId,
-          amountAED: amountAED.toString(),
-          amountUSD: amountUSD.toString()
+    const user = await new Promise((resolve, reject) => {
+      db.query(
+        `SELECT email, first_name, last_name FROM users WHERE id = ?`,
+        [userId],
+        (err, results) => {
+          if (err || results.length === 0) return reject(new Error('User not found'))
+          resolve(results[0])
         }
-      })
+      )
+    })
 
-      // Update transaction with gateway session ID
-      await new Promise((resolve, reject) => {
-        db.query(
-          `UPDATE transactions SET session_id = ? WHERE id = ?`,
-          [session.id, transactionId],
-          (err) => {
-            if (err) return reject(err)
-            resolve()
-          }
-        )
-      })
+    const transactionId = await generateUniqueTransactionId(db)
+    const transactionNumber = await generateUniqueTransactionNumber(db)
+    const wallet = await this.getWallet(userId)
+    const txMetadata = {
+      paymentProvider: 'stripe',
+      immutableConversion: {
+        amountUSD: conversion.amountUSD,
+        localAmount: conversion.localAmount,
+        localCurrencyCode: conversion.localCurrencyCode,
+        usdToLocalRate: conversion.usdToLocalRate
+      },
+      pendingReminderSentAt: null
+    }
 
-      return {
-        sessionId: session.id,
-        url: session.url,
-        amountUSD,
-        amountAED,
-        transactionId
+    await new Promise((resolve, reject) => {
+      db.query(
+        `INSERT INTO transactions
+         (id, transaction_number, user_id, wallet_id, type, amount, local_amount, local_currency_code, usd_to_local_rate,
+          currency, status, payment_provider, payment_method, country_code, description, metadata)
+         VALUES (?, ?, ?, ?, 'deposit', ?, ?, ?, ?, 'USD', 'Pending', 'stripe', 'card', ?, ?, ?)`,
+        [
+          transactionId,
+          transactionNumber,
+          userId,
+          wallet.id,
+          amountUSD,
+          conversion.localAmount,
+          conversion.localCurrencyCode,
+          conversion.usdToLocalRate,
+          countryCode,
+          `Deposit of ${amountUSD} USD (${conversion.localAmount} ${conversion.localCurrencyCode})`,
+          JSON.stringify(txMetadata)
+        ],
+        (err) => (err ? reject(err) : resolve())
+      )
+    })
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: 'Wallet Deposit',
+            description: `Deposit ${amountUSD} USD to your Inglozone wallet`
+          },
+          unit_amount: Math.round(amountUSD * 100)
+        },
+        quantity: 1
+      }],
+      mode: 'payment',
+      success_url: `${process.env.FRONTEND_URL}/wallet/deposit/success?session_id={CHECKOUT_SESSION_ID}&transaction_id=${transactionId}`,
+      cancel_url: `${process.env.FRONTEND_URL}/wallet/deposit/cancel?transaction_id=${transactionId}`,
+      customer_email: user.email,
+      metadata: {
+        userId,
+        transactionId,
+        amountUSD: String(amountUSD),
+        localAmount: String(conversion.localAmount),
+        localCurrencyCode: conversion.localCurrencyCode
       }
+    })
 
-    } catch (error) {
-      throw error
+    await new Promise((resolve, reject) => {
+      db.query(
+        `UPDATE transactions SET session_id = ? WHERE id = ?`,
+        [session.id, transactionId],
+        (err) => (err ? reject(err) : resolve())
+      )
+    })
+
+    return {
+      sessionId: session.id,
+      url: session.url,
+      amountUSD,
+      convertedAmount: conversion.localAmount,
+      currencyCode: conversion.localCurrencyCode,
+      usdToLocalRate: conversion.usdToLocalRate,
+      transactionId
     }
   }
 
@@ -404,42 +463,15 @@ class WalletService {
 
       // Check if payment was successful
       if (session.payment_status === 'paid') {
-        // Update transaction status
-        await new Promise((resolve, reject) => {
-          db.query(
-            `UPDATE transactions 
-             SET status = 'Approved', 
-                 payment_id = ?,
-                 updated_at = NOW()
-             WHERE id = ?`,
-            [session.payment_intent.id, transaction.id],
-            (err) => {
-              if (err) return reject(err)
-              resolve()
-            }
-          )
-        })
-
-        // Update wallet balance
-        await new Promise((resolve, reject) => {
-          db.query(
-            `UPDATE wallets 
-             SET balance = balance + ?, 
-                 updated_at = NOW()
-             WHERE user_id = ?`,
-            [transaction.amount, transaction.user_id],
-            (err) => {
-              if (err) return reject(err)
-              resolve()
-            }
-          )
-        })
+        await this.markTransactionCompleted(transaction.id, session.payment_intent.id)
 
         return {
           success: true,
           message: 'Deposit completed successfully',
-          amount: transaction.amount,
-          currency: transaction.currency
+          amount: Number(transaction.amount),
+          currency: transaction.currency,
+          convertedAmount: transaction.local_amount !== null ? Number(transaction.local_amount) : null,
+          localCurrencyCode: transaction.local_currency_code
         }
       } else {
         // Payment failed
@@ -464,20 +496,27 @@ class WalletService {
     }
   }
 
-  async createTamaraDepositIntent(userId, amountAED) {
+  async createTamaraDepositIntent(userId, amountUSDInput) {
     const countryCode = await this.resolveUserCountry(userId)
     if (countryCode !== 'AE') {
       throw new Error('Tamara deposit is currently available only for UAE')
     }
 
-    const numericAmountAED = parseFloat(amountAED)
-    if (!numericAmountAED || Number.isNaN(numericAmountAED) || numericAmountAED <= 0) {
-      throw new Error('Valid amount is required')
+    const amountUSD = this.toMoney(amountUSDInput)
+    if (!amountUSD || Number.isNaN(amountUSD) || amountUSD <= 0) {
+      throw new Error('Valid USD amount is required')
+    }
+    if (amountUSD < 1) {
+      throw new Error('Minimum deposit amount is 1 USD')
     }
 
-    const amountUSD = parseFloat((numericAmountAED / 3.66).toFixed(2))
-    if (amountUSD < 1) {
-      throw new Error('Minimum deposit amount is 3.66 AED (1 USD)')
+    const conversion = await currencyService.createConversionSnapshot({
+      userId,
+      usdAmount: amountUSD
+    })
+    const numericAmountLocal = this.toMoney(conversion.localAmount)
+    if (conversion.localCurrencyCode !== 'AED') {
+      throw new Error('Tamara deposits require AED conversion for UAE')
     }
 
     const user = await new Promise((resolve, reject) => {
@@ -497,19 +536,31 @@ class WalletService {
 
     await new Promise((resolve, reject) => {
       db.query(
-        `INSERT INTO transactions (id, transaction_number, user_id, wallet_id, type, amount, currency, status, payment_provider, payment_method, country_code, description, metadata)
-         VALUES (?, ?, ?, ?, 'deposit', ?, 'USD', 'Pending', 'tamara', 'bnpl', ?, ?, ?)`,
+        `INSERT INTO transactions
+         (id, transaction_number, user_id, wallet_id, type, amount, local_amount, local_currency_code, usd_to_local_rate,
+          currency, status, payment_provider, payment_method, country_code, description, metadata)
+         VALUES (?, ?, ?, ?, 'deposit', ?, ?, ?, ?, 'USD', 'Pending', 'tamara', 'bnpl', ?, ?, ?)`,
         [
           transactionId,
           transactionNumber,
           userId,
           wallet.id,
           amountUSD,
+          numericAmountLocal,
+          conversion.localCurrencyCode,
+          conversion.usdToLocalRate,
           countryCode,
-          `Tamara deposit of ${numericAmountAED} AED (${amountUSD} USD)`,
+          `Tamara deposit of ${amountUSD} USD (${numericAmountLocal} ${conversion.localCurrencyCode})`,
           JSON.stringify({
             paymentProvider: 'tamara',
-            tamara: { status: 'created', amountAED: numericAmountAED }
+            immutableConversion: {
+              amountUSD,
+              localAmount: numericAmountLocal,
+              localCurrencyCode: conversion.localCurrencyCode,
+              usdToLocalRate: conversion.usdToLocalRate
+            },
+            tamara: { status: 'created', amountLocal: numericAmountLocal, currencyCode: conversion.localCurrencyCode },
+            pendingReminderSentAt: null
           })
         ],
         (err) => (err ? reject(err) : resolve())
@@ -521,9 +572,9 @@ class WalletService {
     const frontendBase = (process.env.FRONTEND_URL || '').replace(/\/+$/, '')
 
     const payload = {
-      total_amount: { amount: numericAmountAED, currency: 'AED' },
-      shipping_amount: { amount: 0, currency: 'AED' },
-      tax_amount: { amount: 0, currency: 'AED' },
+      total_amount: { amount: numericAmountLocal, currency: conversion.localCurrencyCode },
+      shipping_amount: { amount: 0, currency: conversion.localCurrencyCode },
+      tax_amount: { amount: 0, currency: conversion.localCurrencyCode },
       order_reference_id: transactionId,
       order_number: transactionId,
       description: `Wallet deposit for ${user.email}`,
@@ -561,9 +612,9 @@ class WalletService {
           reference_id: transactionId,
           sku: 'INGLO-WALLET-DEPOSIT',
           quantity: 1,
-          unit_price: { amount: numericAmountAED, currency: 'AED' },
-          tax_amount: { amount: 0, currency: 'AED' },
-          total_amount: { amount: numericAmountAED, currency: 'AED' }
+          unit_price: { amount: numericAmountLocal, currency: conversion.localCurrencyCode },
+          tax_amount: { amount: 0, currency: conversion.localCurrencyCode },
+          total_amount: { amount: numericAmountLocal, currency: conversion.localCurrencyCode }
         }
       ],
       merchant_url: {
@@ -586,7 +637,8 @@ class WalletService {
         orderId: checkout.order_id,
         checkoutId: checkout.checkout_id,
         checkoutUrl: checkout.checkout_url,
-        amountAED: numericAmountAED
+        amountLocal: numericAmountLocal,
+        currencyCode: conversion.localCurrencyCode
       }
     }
 
@@ -605,8 +657,10 @@ class WalletService {
       checkoutId: checkout.checkout_id,
       checkoutUrl: checkout.checkout_url,
       status: checkout.status,
-      amountAED: numericAmountAED,
-      amountUSD
+      amountUSD,
+      convertedAmount: numericAmountLocal,
+      currencyCode: conversion.localCurrencyCode,
+      usdToLocalRate: conversion.usdToLocalRate
     }
   }
 
@@ -756,9 +810,9 @@ class WalletService {
     return { success: true, transactionId: transaction.id, orderId, status: order.status }
   }
 
-  async createRazorpayDepositIntent(userId, amountINR) {
-    const amount = parseFloat(amountINR)
-    if (!amount || Number.isNaN(amount) || amount <= 0) throw new Error('Valid amount is required')
+  async createRazorpayDepositIntent(userId, amountUSDInput) {
+    const amountUSD = this.toMoney(amountUSDInput)
+    if (!amountUSD || Number.isNaN(amountUSD) || amountUSD <= 0) throw new Error('Valid USD amount is required')
 
     const countryCode = await this.resolveUserCountry(userId)
     if (countryCode !== 'IN') throw new Error('Razorpay is available only for India')
@@ -774,27 +828,48 @@ class WalletService {
     const wallet = await this.getWallet(userId)
     const transactionId = await generateUniqueTransactionId(db)
     const transactionNumber = await generateUniqueTransactionNumber(db)
-    const amountUSD = parseFloat((amount / (parseFloat(process.env.INR_TO_USD_RATE || '83.5'))).toFixed(2))
+    const conversion = await currencyService.createConversionSnapshot({
+      userId,
+      usdAmount: amountUSD
+    })
+    if (conversion.localCurrencyCode !== 'INR') {
+      throw new Error('Razorpay deposits require INR conversion for India')
+    }
+    const amountINR = this.toMoney(conversion.localAmount)
 
     await db.promise().query(
       `INSERT INTO transactions
-       (id, transaction_number, user_id, wallet_id, type, amount, currency, status, payment_provider, payment_method, country_code, description, metadata)
-       VALUES (?, ?, ?, ?, 'deposit', ?, 'USD', 'Pending', 'razorpay', 'card', 'IN', ?, ?)`,
+       (id, transaction_number, user_id, wallet_id, type, amount, local_amount, local_currency_code, usd_to_local_rate,
+        currency, status, payment_provider, payment_method, country_code, description, metadata)
+       VALUES (?, ?, ?, ?, 'deposit', ?, ?, ?, ?, 'USD', 'Pending', 'razorpay', 'card', 'IN', ?, ?)`,
       [
         transactionId,
         transactionNumber,
         userId,
         wallet.id,
         amountUSD,
-        `Razorpay deposit of ${amount} INR (${amountUSD} USD)`,
-        JSON.stringify({ paymentProvider: 'razorpay', amountINR: amount })
+        amountINR,
+        conversion.localCurrencyCode,
+        conversion.usdToLocalRate,
+        `Razorpay deposit of ${amountUSD} USD (${amountINR} ${conversion.localCurrencyCode})`,
+        JSON.stringify({
+          paymentProvider: 'razorpay',
+          amountINR,
+          immutableConversion: {
+            amountUSD,
+            localAmount: amountINR,
+            localCurrencyCode: conversion.localCurrencyCode,
+            usdToLocalRate: conversion.usdToLocalRate
+          },
+          pendingReminderSentAt: null
+        })
       ]
     )
 
     const receipt = `rcpt_${transactionId.replace(/-/g, '').slice(0, 20)}`
     const payload = {
-      amount: Math.round(amount * 100),
-      currency: 'INR',
+      amount: Math.round(amountINR * 100),
+      currency: conversion.localCurrencyCode,
       receipt,
       notes: { userId, transactionId, amountUSD: String(amountUSD) }
     }
@@ -824,8 +899,11 @@ class WalletService {
       provider: 'razorpay',
       transactionId,
       razorpayOrderId: data.id,
-      amountINR: amount,
+      amountINR,
       amountUSD,
+      convertedAmount: amountINR,
+      currencyCode: conversion.localCurrencyCode,
+      usdToLocalRate: conversion.usdToLocalRate,
       razorpayKeyId: gateway.publicKey
     }
   }
@@ -916,12 +994,16 @@ class WalletService {
     }
   }
 
-  async createBankTransferDepositIntent(userId, amount) {
-    const numericAmount = parseFloat(amount)
-    if (!numericAmount || Number.isNaN(numericAmount) || numericAmount <= 0) {
-      throw new Error('Valid amount is required')
+  async createBankTransferDepositIntent(userId, amountUSDInput) {
+    const amountUSD = this.toMoney(amountUSDInput)
+    if (!amountUSD || Number.isNaN(amountUSD) || amountUSD <= 0) {
+      throw new Error('Valid USD amount is required')
     }
     const countryCode = await this.resolveUserCountry(userId)
+    const conversion = await currencyService.createConversionSnapshot({
+      userId,
+      usdAmount: amountUSD
+    })
     const bankInfo = await this.getBankTransferDetailsForUser(userId)
     if (!bankInfo?.fields?.length) {
       throw new Error('Bank transfer details unavailable')
@@ -933,24 +1015,41 @@ class WalletService {
 
     await db.promise().query(
       `INSERT INTO transactions
-       (id, transaction_number, user_id, wallet_id, type, amount, currency, status, payment_provider, payment_method, country_code, description, metadata)
-       VALUES (?, ?, ?, ?, 'deposit', ?, 'USD', 'Pending', 'bank_transfer', 'bank_transfer', ?, ?, ?)`,
+       (id, transaction_number, user_id, wallet_id, type, amount, local_amount, local_currency_code, usd_to_local_rate,
+        currency, status, payment_provider, payment_method, country_code, description, metadata)
+       VALUES (?, ?, ?, ?, 'deposit', ?, ?, ?, ?, 'USD', 'Pending', 'bank_transfer', 'bank_transfer', ?, ?, ?)`,
       [
         transactionId,
         transactionNumber,
         userId,
         wallet.id,
-        numericAmount,
+        amountUSD,
+        conversion.localAmount,
+        conversion.localCurrencyCode,
+        conversion.usdToLocalRate,
         countryCode,
-        `Bank transfer deposit request (${countryCode})`,
-        JSON.stringify({ paymentProvider: 'bank_transfer', proofUploaded: false })
+        `Bank transfer deposit request ${amountUSD} USD (${conversion.localAmount} ${conversion.localCurrencyCode})`,
+        JSON.stringify({
+          paymentProvider: 'bank_transfer',
+          proofUploaded: false,
+          immutableConversion: {
+            amountUSD,
+            localAmount: conversion.localAmount,
+            localCurrencyCode: conversion.localCurrencyCode,
+            usdToLocalRate: conversion.usdToLocalRate
+          },
+          pendingReminderSentAt: null
+        })
       ]
     )
 
     return {
       transactionId,
       status: 'Pending',
-      amount: numericAmount,
+      amountUSD,
+      convertedAmount: conversion.localAmount,
+      currencyCode: conversion.localCurrencyCode,
+      usdToLocalRate: conversion.usdToLocalRate,
       currency: 'USD',
       countryCode,
       bankDetails: bankInfo.fields
@@ -1020,8 +1119,9 @@ class WalletService {
   async getTransactions(userId, limit = 10, offset = 0) {
     return new Promise((resolve, reject) => {
       db.query(
-        `SELECT t.id, t.transaction_number, t.user_id, t.wallet_id, t.type, t.amount, t.currency, t.status,
-                t.payment_provider, t.payment_method, t.country_code, t.payment_id, t.session_id,
+        `SELECT t.id, t.transaction_number, t.user_id, t.wallet_id, t.withdrawal_account_id, t.type,
+                t.amount, t.local_amount, t.local_currency_code, t.usd_to_local_rate, t.currency, t.status,
+                t.payment_provider, t.payment_method, t.country_code, t.payment_id, t.session_id, t.reference_number,
                 t.description, t.metadata, t.review_reason, t.reviewed_by, t.reviewed_at, t.created_at, t.updated_at,
                 DATE_FORMAT(t.created_at, '%Y-%m-%d %H:%i:%s') as formatted_date
          FROM transactions t
@@ -1056,8 +1156,9 @@ class WalletService {
   async getTransactionById(transactionId, userId) {
     return new Promise((resolve, reject) => {
       db.query(
-        `SELECT t.id, t.transaction_number, t.user_id, t.wallet_id, t.type, t.amount, t.currency, t.status,
-                t.payment_provider, t.payment_method, t.country_code, t.payment_id, t.session_id,
+        `SELECT t.id, t.transaction_number, t.user_id, t.wallet_id, t.withdrawal_account_id, t.type,
+                t.amount, t.local_amount, t.local_currency_code, t.usd_to_local_rate, t.currency, t.status,
+                t.payment_provider, t.payment_method, t.country_code, t.payment_id, t.session_id, t.reference_number,
                 t.description, t.metadata, t.review_reason, t.reviewed_by, t.reviewed_at, t.created_at, t.updated_at,
                 DATE_FORMAT(t.created_at, '%Y-%m-%d %H:%i:%s') as formatted_date
          FROM transactions t
@@ -1071,74 +1172,71 @@ class WalletService {
     })
   }
 
-  // In wallet.service.js, add this method:
-async handleWebhookEvent(event) {
-  try {
-    const session = event.data.object
-    
-    if (event.type === 'checkout.session.completed' && session.payment_status === 'paid') {
-      const { transactionId } = session.metadata
-      
-      if (!transactionId) {
-        throw new Error('No transaction ID in webhook')
-      }
-      
-      // Find transaction
-      const transaction = await new Promise((resolve, reject) => {
-        db.query(
-          `SELECT * FROM transactions WHERE id = ?`,
-          [transactionId],
-          (err, results) => {
-            if (err || results.length === 0) return reject(new Error('Transaction not found'))
-            resolve(results[0])
-          }
+  async processPendingDepositReminders() {
+    const [rows] = await db.promise().query(
+      `SELECT t.id, t.transaction_number AS transactionNumber, t.user_id AS userId, t.amount,
+              t.local_amount AS localAmount, t.local_currency_code AS localCurrencyCode, t.status,
+              u.email, u.first_name AS firstName, t.metadata
+       FROM transactions t
+       JOIN users u ON u.id = t.user_id
+       WHERE t.type = 'deposit'
+         AND t.status IN ('Pending', 'pending', 'Reviewing')
+         AND t.created_at <= DATE_SUB(NOW(), INTERVAL 2 HOUR)
+         AND (
+           t.metadata IS NULL
+           OR JSON_EXTRACT(t.metadata, '$.pendingReminderSentAt') IS NULL
+         )
+       ORDER BY t.created_at ASC
+       LIMIT 200`
+    )
+
+    for (const row of rows) {
+      try {
+        await emailService.sendDepositPendingReminderEmail(row.email, row.firstName || 'User', {
+          transactionNumber: row.transactionNumber,
+          amountUSD: Number(row.amount),
+          localAmount: row.localAmount !== null ? Number(row.localAmount) : null,
+          localCurrencyCode: row.localCurrencyCode,
+          status: row.status
+        })
+
+        const reminderSentAt = new Date().toISOString()
+        await db.promise().query(
+          `UPDATE transactions
+           SET metadata = JSON_SET(COALESCE(metadata, JSON_OBJECT()), '$.pendingReminderSentAt', ?),
+               updated_at = NOW()
+           WHERE id = ?`,
+          [reminderSentAt, row.id]
         )
-      })
-      
-      // Only process if still pending
-      if (transaction.status === 'pending' || transaction.status === 'Pending') {
-        // Update transaction
-        await new Promise((resolve, reject) => {
-          db.query(
-            `UPDATE transactions 
-             SET status = 'Approved', 
-                 payment_id = ?,
-                 updated_at = NOW()
-             WHERE id = ?`,
-            [session.payment_intent, transactionId],
-            (err) => {
-              if (err) return reject(err)
-              resolve()
-            }
-          )
-        })
-        
-        // Update wallet
-        await new Promise((resolve, reject) => {
-          db.query(
-            `UPDATE wallets 
-             SET balance = balance + ?, 
-                 updated_at = NOW()
-             WHERE user_id = ?`,
-            [transaction.amount, transaction.user_id],
-            (err) => {
-              if (err) return reject(err)
-              resolve()
-            }
-          )
-        })
-        
+      } catch (error) {
+        console.error(`Failed to process pending deposit reminder for ${row.id}:`, error.message)
+      }
+    }
+
+    return {
+      checked: rows.length
+    }
+  }
+
+  async handleWebhookEvent(event) {
+    try {
+      const session = event.data.object
+
+      if (event.type === 'checkout.session.completed' && session.payment_status === 'paid') {
+        const { transactionId } = session.metadata || {}
+        if (!transactionId) throw new Error('No transaction ID in webhook')
+
+        await this.markTransactionCompleted(transactionId, session.payment_intent || null)
         console.log(`Webhook: Deposit completed for transaction ${transactionId}`)
         return { success: true, transactionId }
       }
+
+      return { success: false, message: 'Event not processed' }
+    } catch (error) {
+      console.error('Webhook processing error:', error)
+      throw error
     }
-    
-    return { success: false, message: 'Event not processed' }
-  } catch (error) {
-    console.error('Webhook processing error:', error)
-    throw error
   }
-}
 }
 
 module.exports = new WalletService()

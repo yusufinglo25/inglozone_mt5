@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken')
 const speakeasy = require('speakeasy')
 const { v4: uuidv4 } = require('uuid')
 const emailService = require('./email.service')
+const currencyService = require('./currency.service')
 const { getNextUserId } = require('../utils/id-generator')
 
 function normalizeAccountType(value) {
@@ -87,8 +88,18 @@ async function createUserSessionToken(user, ipAddress = null, userAgent = null) 
 }
 
 exports.register = async (data) => {
-  const { firstName, lastName, email, password, accountType } = data
+  const {
+    firstName,
+    lastName,
+    email,
+    password,
+    accountType,
+    registrationCountryCode = process.env.DEFAULT_COUNTRY_CODE || 'AE'
+  } = data
   const normalizedAccountType = normalizeAccountType(accountType)
+  const registrationCountry = await currencyService.resolveRegistrationCountry({
+    countryCode: registrationCountryCode
+  })
 
   const existingUser = await new Promise((resolve, reject) => {
     db.query(`SELECT id FROM users WHERE email = ?`, [email], (err, results) => {
@@ -106,9 +117,22 @@ exports.register = async (data) => {
 
   return new Promise((resolve, reject) => {
     db.query(
-      `INSERT INTO users (id, first_name, last_name, email, password_hash, account_type)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, firstName, lastName, email, hash, normalizedAccountType],
+      `INSERT INTO users (
+         id, first_name, last_name, email, password_hash, account_type,
+         registration_country_code, registration_country_name, registration_currency_code
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        firstName,
+        lastName,
+        email,
+        hash,
+        normalizedAccountType,
+        registrationCountry.countryCode,
+        registrationCountry.countryName,
+        registrationCountry.currencyCode
+      ],
       (err) => {
         if (err) return reject(err)
         if (normalizedAccountType === 'investor') {
@@ -186,6 +210,9 @@ exports.login = async (data) => {
           lastName: user.last_name,
           mobile: user.mobile,
           accountType: normalizeAccountType(user.account_type),
+          registrationCountryCode: user.registration_country_code,
+          registrationCountryName: user.registration_country_name,
+          registrationCurrencyCode: user.registration_currency_code,
           is2FAEnabled: user.is_2fa_enabled,
           profileCompleted: user.profile_completed
         }
@@ -244,6 +271,9 @@ exports.verifyLogin2FA = async (data) => {
       lastName: user.last_name,
       mobile: user.mobile,
       accountType: normalizeAccountType(user.account_type),
+      registrationCountryCode: user.registration_country_code,
+      registrationCountryName: user.registration_country_name,
+      registrationCurrencyCode: user.registration_currency_code,
       is2FAEnabled: user.is_2fa_enabled,
       profileCompleted: user.profile_completed
     }
@@ -251,8 +281,18 @@ exports.verifyLogin2FA = async (data) => {
 }
 
 exports.sendRegistrationOTP = async (data) => {
-  const { firstName, lastName, email, password, accountType } = data
+  const {
+    firstName,
+    lastName,
+    email,
+    password,
+    accountType,
+    registrationCountryCode = process.env.DEFAULT_COUNTRY_CODE || 'AE'
+  } = data
   const normalizedAccountType = normalizeAccountType(accountType)
+  const registrationCountry = await currencyService.resolveRegistrationCountry({
+    countryCode: registrationCountryCode
+  })
 
   const existingUser = await new Promise((resolve, reject) => {
     db.query(`SELECT id FROM users WHERE email = ?`, [email], (err, results) => {
@@ -323,7 +363,18 @@ exports.sendRegistrationOTP = async (data) => {
 
   const passwordHash = await bcrypt.hash(password, 10)
   const tempToken = jwt.sign(
-    { temp: true, email, firstName, lastName, passwordHash, otpId, accountType: normalizedAccountType },
+    {
+      temp: true,
+      email,
+      firstName,
+      lastName,
+      passwordHash,
+      otpId,
+      accountType: normalizedAccountType,
+      registrationCountryCode: registrationCountry.countryCode,
+      registrationCountryName: registrationCountry.countryName,
+      registrationCurrencyCode: registrationCountry.currencyCode
+    },
     process.env.JWT_SECRET,
     { expiresIn: '10m' }
   )
@@ -344,8 +395,21 @@ exports.verifyRegistrationOTP = async (tempToken, otpCode, sessionMeta = {}) => 
     const decoded = jwt.verify(tempToken, process.env.JWT_SECRET)
     if (!decoded.temp) throw new Error('Invalid verification token')
 
-    const { email, firstName, lastName, passwordHash, otpId, accountType } = decoded
+    const {
+      email,
+      firstName,
+      lastName,
+      passwordHash,
+      otpId,
+      accountType,
+      registrationCountryCode = process.env.DEFAULT_COUNTRY_CODE || 'AE',
+      registrationCountryName = null,
+      registrationCurrencyCode = null
+    } = decoded
     const normalizedAccountType = normalizeAccountType(accountType)
+    const registrationCountry = await currencyService.resolveRegistrationCountry({
+      countryCode: registrationCountryCode
+    })
 
     const otpRecord = await new Promise((resolve, reject) => {
       db.query(
@@ -385,9 +449,20 @@ exports.verifyRegistrationOTP = async (tempToken, otpCode, sessionMeta = {}) => 
       db.query(
         `INSERT INTO users (
           id, first_name, last_name, email, password_hash,
-          provider, is_verified, email_verified, password_set, verified_at, account_type
-        ) VALUES (?, ?, ?, ?, ?, 'local', true, true, true, NOW(), ?)`,
-        [userId, firstName, lastName, email, passwordHash, normalizedAccountType],
+          provider, is_verified, email_verified, password_set, verified_at, account_type,
+          registration_country_code, registration_country_name, registration_currency_code
+        ) VALUES (?, ?, ?, ?, ?, 'local', true, true, true, NOW(), ?, ?, ?, ?)`,
+        [
+          userId,
+          firstName,
+          lastName,
+          email,
+          passwordHash,
+          normalizedAccountType,
+          registrationCountry.countryCode,
+          registrationCountryName || registrationCountry.countryName,
+          registrationCurrencyCode || registrationCountry.currencyCode
+        ],
         (err) => (err ? reject(err) : resolve())
       )
     })
@@ -418,6 +493,9 @@ exports.verifyRegistrationOTP = async (tempToken, otpCode, sessionMeta = {}) => 
         email,
         firstName,
         lastName,
+        registrationCountryCode: registrationCountry.countryCode,
+        registrationCountryName: registrationCountryName || registrationCountry.countryName,
+        registrationCurrencyCode: registrationCurrencyCode || registrationCountry.currencyCode,
         emailVerified: true,
         isVerified: true,
         provider: 'local',
@@ -501,7 +579,10 @@ exports.resendRegistrationOTP = async (tempToken) => {
         lastName: decoded.lastName,
         passwordHash: decoded.passwordHash,
         otpId,
-        accountType: normalizeAccountType(decoded.accountType)
+        accountType: normalizeAccountType(decoded.accountType),
+        registrationCountryCode: decoded.registrationCountryCode,
+        registrationCountryName: decoded.registrationCountryName,
+        registrationCurrencyCode: decoded.registrationCurrencyCode
       },
       process.env.JWT_SECRET,
       { expiresIn: '10m' }
@@ -531,6 +612,10 @@ exports.checkEmail = async (email) => {
       }
     )
   })
+}
+
+exports.getRegistrationCountries = async () => {
+  return currencyService.getSupportedCountries()
 }
 
 exports.completeProfile = async (userId, data) => {
@@ -572,6 +657,7 @@ module.exports = {
   resendRegistrationOTP: exports.resendRegistrationOTP,
   verifyLogin2FA: exports.verifyLogin2FA,
   checkEmail: exports.checkEmail,
+  getRegistrationCountries: exports.getRegistrationCountries,
   completeProfile: exports.completeProfile,
   createUserSessionToken
 }

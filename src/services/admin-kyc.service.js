@@ -8,7 +8,7 @@ class AdminKYCService {
          u.id AS user_id,
          u.email,
          CONCAT_WS(' ', u.first_name, u.last_name) AS customer_name,
-         kp.country_of_residence AS country,
+         COALESCE(NULLIF(u.registration_country_name, ''), kp.country_of_residence) AS country,
          kp.profile_status,
          (
            SELECT kd.status

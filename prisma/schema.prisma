@@ -262,6 +262,21 @@ model otp_verifications {
   @@index([expires_at], map: "idx_expires")
 }
 
+model country_currency_rates {
+  id            String    @id @db.VarChar(36)
+  country_code  String    @unique(map: "uk_currency_rate_country_code") @db.Char(2)
+  country_name  String    @db.VarChar(100)
+  currency_code String    @db.VarChar(10)
+  usd_rate      Decimal   @db.Decimal(18, 6)
+  is_active     Boolean?  @default(true)
+  updated_by    String?   @db.VarChar(36)
+  created_at    DateTime? @default(now()) @db.Timestamp(0)
+  updated_at    DateTime? @default(now()) @db.Timestamp(0)
+
+  @@index([country_code, is_active], map: "idx_currency_rate_country_enabled")
+  @@index([currency_code], map: "idx_currency_rate_currency_code")
+}
+
 model payment_gateway_configs {
   id                   String                               @id @db.VarChar(36)
   gateway_code         payment_gateway_configs_gateway_code @unique(map: "gateway_code")
@@ -311,12 +326,17 @@ model transactions {
   transaction_number   String?                        @unique(map: "uk_transactions_transaction_number") @db.VarChar(15)
   user_id              String                         @db.VarChar(36)
   wallet_id            String?                        @db.VarChar(36)
+  withdrawal_account_id String?                       @db.VarChar(36)
   type                 transactions_type
   amount               Decimal                        @db.Decimal(15, 2)
+  local_amount         Decimal?                       @db.Decimal(15, 2)
+  local_currency_code  String?                        @db.VarChar(10)
+  usd_to_local_rate    Decimal?                       @db.Decimal(18, 6)
   currency             String?                        @default("USD") @db.VarChar(10)
   status               transactions_status?           @default(pending)
   payment_id           String?                        @db.VarChar(255)
   session_id           String?                        @db.VarChar(255)
+  reference_number     String?                        @db.VarChar(128)
   payment_provider     transactions_payment_provider?
   payment_method       transactions_payment_method?
   country_code         String?                        @db.Char(2)
@@ -330,9 +350,12 @@ model transactions {
   created_at           DateTime?                      @default(now()) @db.Timestamp(0)
   updated_at           DateTime?                      @default(now()) @db.Timestamp(0)
   bank_transfer_proofs bank_transfer_proofs?
+  user_withdrawal_accounts user_withdrawal_accounts?  @relation(fields: [withdrawal_account_id], references: [id], onUpdate: Restrict, map: "fk_transactions_withdrawal_account")
   users                users                          @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "transactions_ibfk_1")
   wallets              wallets?                       @relation(fields: [wallet_id], references: [id], onUpdate: Restrict, map: "transactions_ibfk_2")
 
+  @@index([withdrawal_account_id], map: "idx_transactions_withdrawal_account")
+  @@index([reference_number], map: "idx_transactions_reference_number")
   @@index([status], map: "idx_status")
   @@index([stripe_payment_id], map: "idx_stripe_id")
   @@index([payment_id], map: "idx_transactions_payment_id")
@@ -340,6 +363,29 @@ model transactions {
   @@index([type], map: "idx_type")
   @@index([user_id], map: "idx_user_id")
   @@index([wallet_id], map: "transactions_ibfk_2")
+}
+
+model user_withdrawal_accounts {
+  id                 String                        @id @db.VarChar(36)
+  user_id            String                        @db.VarChar(36)
+  country_code       String                        @db.Char(2)
+  method             user_withdrawal_accounts_method
+  label              String?                       @db.VarChar(100)
+  account_holder_name String?                      @db.VarChar(150)
+  upi_id             String?                       @db.VarChar(150)
+  bank_name          String?                       @db.VarChar(150)
+  account_number     String?                       @db.VarChar(100)
+  ifsc_code          String?                       @db.VarChar(20)
+  iban               String?                       @db.VarChar(50)
+  is_default         Boolean?                      @default(false)
+  is_active          Boolean?                      @default(true)
+  created_at         DateTime?                     @default(now()) @db.Timestamp(0)
+  updated_at         DateTime?                     @default(now()) @db.Timestamp(0)
+  transactions       transactions[]
+  users              users                         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_withdrawal_account_user")
+
+  @@index([user_id, is_active], map: "idx_withdrawal_account_user_active")
+  @@index([country_code, method], map: "idx_withdrawal_account_country_method")
 }
 
 model user_access_control {
@@ -410,6 +456,9 @@ model users {
   two_fa_temp_expires_at                         DateTime?              @db.Timestamp(0)
   account_type                                   users_account_type     @default(trader)
   auth_version                                   Int                    @default(1)
+  registration_country_code                      String?                @default("AE") @db.Char(2)
+  registration_country_name                      String?                @db.VarChar(100)
+  registration_currency_code                     String?                @default("USD") @db.VarChar(10)
   bank_transfer_proofs                           bank_transfer_proofs[]
   investor_accounts                              investor_accounts?
   kyc_audit_logs                                 kyc_audit_logs[]
@@ -420,6 +469,7 @@ model users {
   kyc_records                                    kyc_records?
   risk_profiles                                  risk_profiles?
   transactions                                   transactions[]
+  user_withdrawal_accounts                       user_withdrawal_accounts[]
   wallets                                        wallets?
 }
 
@@ -471,6 +521,7 @@ enum otp_verifications_purpose {
   registration
   password_reset
   email_change
+  withdrawal_request
 }
 
 enum user_access_control_login_access_status {
@@ -555,11 +606,18 @@ enum transactions_payment_provider {
   tamara
   razorpay
   bank_transfer
+  manual_payout
 }
 
 enum transactions_payment_method {
   card
   bnpl
+  bank_transfer
+  upi
+}
+
+enum user_withdrawal_accounts_method {
+  upi
   bank_transfer
 }
 

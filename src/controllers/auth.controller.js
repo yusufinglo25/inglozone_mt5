@@ -19,7 +19,15 @@ const addCorsHeaders = (res, req) => {
 // OLD FUNCTIONS - KEEP AS IS (commented out since we're using OTP now)
 exports.register = async (req, res) => {
   try {
-    const { firstName, lastName, email, password, accountType } = req.body
+    const {
+      firstName,
+      lastName,
+      email,
+      password,
+      accountType,
+      registrationCountryCode,
+      countryCode
+    } = req.body
 
     if (!firstName || !lastName || !email || !password || !accountType) {
       res = addCorsHeaders(res, req);
@@ -38,7 +46,14 @@ exports.register = async (req, res) => {
       return res.status(400).json({ error: passwordError })
     }
 
-    const user = await service.register({ firstName, lastName, email, password, accountType })
+    const user = await service.register({
+      firstName,
+      lastName,
+      email,
+      password,
+      accountType,
+      registrationCountryCode: registrationCountryCode || countryCode || process.env.DEFAULT_COUNTRY_CODE || 'AE'
+    })
     res = addCorsHeaders(res, req);
     res.json(user)
   } catch (err) {
@@ -99,7 +114,15 @@ exports.verifyLogin2FA = async (req, res) => {
 // NEW OTP FUNCTIONS
 exports.registerWithOTP = async (req, res) => {
   try {
-    const { firstName, lastName, email, password, accountType } = req.body
+    const {
+      firstName,
+      lastName,
+      email,
+      password,
+      accountType,
+      registrationCountryCode,
+      countryCode
+    } = req.body
     
     if (!firstName || !lastName || !email || !password || !accountType) {
       res = addCorsHeaders(res, req);
@@ -125,7 +148,8 @@ exports.registerWithOTP = async (req, res) => {
       lastName,
       email,
       password,
-      accountType
+      accountType,
+      registrationCountryCode: registrationCountryCode || countryCode || process.env.DEFAULT_COUNTRY_CODE || 'AE'
     })
     
     res = addCorsHeaders(res, req);
@@ -252,5 +276,19 @@ exports.completeProfile = async (req, res) => {
   } catch (error) {
     res = addCorsHeaders(res, req);
     res.status(400).json({ error: error.message })
+  }
+}
+
+exports.getRegistrationCountries = async (req, res) => {
+  try {
+    const countries = await service.getRegistrationCountries()
+    res = addCorsHeaders(res, req)
+    res.status(200).json({
+      success: true,
+      data: countries
+    })
+  } catch (err) {
+    res = addCorsHeaders(res, req)
+    res.status(500).json({ error: err.message })
   }
 }

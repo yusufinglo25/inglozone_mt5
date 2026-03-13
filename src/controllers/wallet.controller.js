@@ -1,4 +1,5 @@
 const walletService = require('../services/wallet.service')
+const withdrawalService = require('../services/withdrawal.service')
 
 exports.getWallet = async (req, res) => {
   try {
@@ -30,15 +31,40 @@ exports.getPaymentMethods = async (req, res) => {
   }
 }
 
+exports.getCurrencyContext = async (req, res) => {
+  try {
+    const userId = req.user.id
+    const data = await walletService.getUserCurrencyContext(userId)
+    res.json({ success: true, data })
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
+exports.getSupportedCountries = async (req, res) => {
+  try {
+    const data = walletService.getSupportedCountries()
+    res.json({ success: true, data })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
 exports.createDeposit = async (req, res) => {
   try {
     const userId = req.user.id
-    const { amount } = req.body
+    const amount = req.body.amountUSD ?? req.body.amount
     
     if (!amount || isNaN(amount) || amount <= 0) {
       return res.status(400).json({
         success: false,
-        error: 'Valid amount is required'
+        error: 'Valid USD amount is required'
       })
     }
 
@@ -84,12 +110,12 @@ exports.verifyDeposit = async (req, res) => {
 exports.createTamaraDeposit = async (req, res) => {
   try {
     const userId = req.user.id
-    const { amount } = req.body
+    const amount = req.body.amountUSD ?? req.body.amount
 
     if (!amount || isNaN(amount) || amount <= 0) {
       return res.status(400).json({
         success: false,
-        error: 'Valid amount is required'
+        error: 'Valid USD amount is required'
       })
     }
 
@@ -132,12 +158,12 @@ exports.verifyTamaraDeposit = async (req, res) => {
 exports.createRazorpayDeposit = async (req, res) => {
   try {
     const userId = req.user.id
-    const { amount } = req.body
+    const amount = req.body.amountUSD ?? req.body.amount
 
     if (!amount || isNaN(amount) || amount <= 0) {
       return res.status(400).json({
         success: false,
-        error: 'Valid amount is required'
+        error: 'Valid USD amount is required'
       })
     }
 
@@ -174,14 +200,97 @@ exports.verifyRazorpayDeposit = async (req, res) => {
 exports.createBankTransferDeposit = async (req, res) => {
   try {
     const userId = req.user.id
-    const { amount } = req.body
+    const amount = req.body.amountUSD ?? req.body.amount
     if (!amount || isNaN(amount) || amount <= 0) {
       return res.status(400).json({
         success: false,
-        error: 'Valid amount is required'
+        error: 'Valid USD amount is required'
       })
     }
     const data = await walletService.createBankTransferDepositIntent(userId, parseFloat(amount))
+    res.json({ success: true, data })
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
+exports.getWithdrawalOptions = async (req, res) => {
+  try {
+    const userId = req.user.id
+    const data = await withdrawalService.getWithdrawalOptions(userId)
+    res.json({ success: true, data })
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
+exports.getWithdrawalAccounts = async (req, res) => {
+  try {
+    const userId = req.user.id
+    const data = await withdrawalService.listAccounts(userId)
+    res.json({ success: true, data })
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
+exports.createWithdrawalAccount = async (req, res) => {
+  try {
+    const userId = req.user.id
+    const data = await withdrawalService.createAccount(userId, req.body || {})
+    res.json({ success: true, data })
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
+exports.requestWithdrawalOTP = async (req, res) => {
+  try {
+    const userId = req.user.id
+    const amountUSD = req.body.amountUSD ?? req.body.amount
+    const withdrawalAccountId = req.body.withdrawalAccountId
+    const data = await withdrawalService.createWithdrawalOtpRequest({
+      userId,
+      amountUsd: amountUSD,
+      withdrawalAccountId
+    })
+    res.json({ success: true, data })
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
+exports.verifyWithdrawalOTP = async (req, res) => {
+  try {
+    const userId = req.user.id
+    const { verificationToken, otp, note } = req.body
+    if (!verificationToken || !otp) {
+      return res.status(400).json({
+        success: false,
+        error: 'verificationToken and otp are required'
+      })
+    }
+    const data = await withdrawalService.verifyWithdrawalOtpAndCreateRequest({
+      userId,
+      verificationToken,
+      otpCode: otp,
+      note
+    })
     res.json({ success: true, data })
   } catch (error) {
     res.status(400).json({

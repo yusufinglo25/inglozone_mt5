@@ -48,6 +48,7 @@ app.use('/swagger-ui-assets', express.static(swaggerUiAssetsPath))
 const migrate = require('./src/config/migrate')
 const runAdminMigrations = require('./src/config/admin.migrate')
 const runSettingsMigrations = require('./src/config/settings.migrate')
+const startPaymentReminderJob = require('./src/jobs/payment-reminder')
 migrate()
 runAdminMigrations()
 runSettingsMigrations()
@@ -56,6 +57,10 @@ runSettingsMigrations()
 // Start cleanup job (comment out in development if needed)
 if (process.env.NODE_ENV === 'production') {
   require('./src/jobs/cleanup')
+}
+
+if (process.env.ENABLE_PAYMENT_REMINDER_JOB !== 'false') {
+  startPaymentReminderJob()
 }
 
 app.use('/api-docs', swaggerUi.serve, (req, res, next) => {
