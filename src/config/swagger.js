@@ -164,14 +164,14 @@ function resolveRoleModuleTag(openApiPath) {
   return `${role} - ${module}`
 }
 
-const ROLE_GROUPS = [
+const ROLE_ORDER = [
   'Admin APIs',
   'Trader APIs',
   'Investor APIs',
   'Trader + Investor APIs'
 ]
 
-const MODULE_GROUPS = [
+const MODULE_ORDER = [
   'Auth APIs',
   'Currency APIs',
   'Deposit APIs',
@@ -185,31 +185,65 @@ const MODULE_GROUPS = [
   'General APIs'
 ]
 
-function buildRoleModuleTags() {
-  const descriptions = {
-    'Auth APIs': 'Authentication and session APIs',
-    'Currency APIs': 'Country and currency conversion APIs',
-    'Deposit APIs': 'Deposit and payment processing APIs',
-    'Withdrawal APIs': 'Withdrawal request and processing APIs',
-    'Transaction APIs': 'Transaction history and details APIs',
-    'KYC APIs': 'KYC submission/review APIs',
-    'Settings APIs': 'Account settings and security APIs',
-    'User APIs': 'User profile and user management APIs',
-    'Investor APIs': 'Investor module APIs',
-    'Dashboard APIs': 'Dashboard and analytics APIs',
-    'General APIs': 'General APIs for the role'
+const MODULE_DESCRIPTIONS = {
+  'Auth APIs': 'Authentication and session APIs',
+  'Currency APIs': 'Country and currency conversion APIs',
+  'Deposit APIs': 'Deposit and payment processing APIs',
+  'Withdrawal APIs': 'Withdrawal request and processing APIs',
+  'Transaction APIs': 'Transaction history and details APIs',
+  'KYC APIs': 'KYC submission/review APIs',
+  'Settings APIs': 'Account settings and security APIs',
+  'User APIs': 'User profile and user management APIs',
+  'Investor APIs': 'Investor module APIs',
+  'Dashboard APIs': 'Dashboard and analytics APIs',
+  'General APIs': 'General APIs for the role'
+}
+
+function buildTagObject(tagName) {
+  if (tagName === 'Health') {
+    return { name: 'Health', description: 'System health endpoints' }
   }
 
-  const tags = []
-  for (const role of ROLE_GROUPS) {
-    for (const module of MODULE_GROUPS) {
-      tags.push({
-        name: `${role} - ${module}`,
-        description: `${role}: ${descriptions[module]}`
-      })
-    }
+  const match = /^(.+?) - (.+)$/.exec(tagName)
+  if (!match) {
+    return { name: tagName, description: tagName }
   }
-  return tags
+
+  const role = match[1]
+  const module = match[2]
+  const moduleDesc = MODULE_DESCRIPTIONS[module] || 'APIs'
+  return {
+    name: tagName,
+    description: `${role}: ${moduleDesc}`
+  }
+}
+
+function sortTagNames(tagNames) {
+  return [...tagNames].sort((a, b) => {
+    if (a === 'Health') return -1
+    if (b === 'Health') return 1
+
+    const [roleA = '', moduleA = ''] = a.split(' - ')
+    const [roleB = '', moduleB = ''] = b.split(' - ')
+
+    const roleIndexA = ROLE_ORDER.indexOf(roleA)
+    const roleIndexB = ROLE_ORDER.indexOf(roleB)
+    const normalizedRoleIndexA = roleIndexA === -1 ? 999 : roleIndexA
+    const normalizedRoleIndexB = roleIndexB === -1 ? 999 : roleIndexB
+    if (normalizedRoleIndexA !== normalizedRoleIndexB) {
+      return normalizedRoleIndexA - normalizedRoleIndexB
+    }
+
+    const moduleIndexA = MODULE_ORDER.indexOf(moduleA)
+    const moduleIndexB = MODULE_ORDER.indexOf(moduleB)
+    const normalizedModuleIndexA = moduleIndexA === -1 ? 999 : moduleIndexA
+    const normalizedModuleIndexB = moduleIndexB === -1 ? 999 : moduleIndexB
+    if (normalizedModuleIndexA !== normalizedModuleIndexB) {
+      return normalizedModuleIndexA - normalizedModuleIndexB
+    }
+
+    return a.localeCompare(b)
+  })
 }
 
 const MANUALLY_DOCUMENTED_OPERATIONS = new Set([
@@ -335,10 +369,7 @@ function getSwaggerSpec() {
         version: '1.0.0',
         description: 'Auto-generated OpenAPI docs from existing route files + optional manual JSDoc docs.'
       },
-      tags: [
-        { name: 'Health', description: 'System health endpoints' },
-        ...buildRoleModuleTags()
-      ],
+      tags: [{ name: 'Health', description: 'System health endpoints' }],
       servers: [
         { url: process.env.BASE_URL || 'https://temp.inglozone.com' }
       ],
@@ -455,15 +486,19 @@ function getSwaggerSpec() {
   }
 
   const spec = swaggerJsdoc(options)
-  spec.tags = options.definition.tags
   const methodKeys = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options'])
+  const usedTags = new Set(['Health'])
 
   Object.entries(spec.paths || {}).forEach(([openApiPath, pathItem]) => {
     Object.entries(pathItem || {}).forEach(([method, operation]) => {
       if (!methodKeys.has(method) || !operation || typeof operation !== 'object') return
-      operation.tags = [resolveRoleModuleTag(openApiPath)]
+      const resolvedTag = resolveRoleModuleTag(openApiPath)
+      operation.tags = [resolvedTag]
+      usedTags.add(resolvedTag)
     })
   })
+
+  spec.tags = sortTagNames(Array.from(usedTags)).map(buildTagObject)
 
   return spec
 }
