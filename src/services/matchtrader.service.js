@@ -685,41 +685,96 @@ class MatchTraderService {
       body
     })
 
-    let created = null
-    let lastProviderPayload = null
-    let lastRequestError = null
-    for (const providerBody of createVariants) {
-      try {
-        const createdPayload = await this.client.post(
-          `/v1/accounts/${encodeURIComponent(brokerAccount.uuid)}/trading-accounts`,
-          providerBody
-        )
-        const candidate = this.unwrapData(createdPayload)
-        lastProviderPayload = candidate
+    const tryCreateTradingAccount = async (brokerAccountUuid) => {
+      let createdPayloadCandidate = null
+      let providerPayloadCandidate = null
+      let requestErrorCandidate = null
 
-        const candidateTradingId = this.findTradingAccountId(candidate)
-        const candidateStatus = String(candidate.status || '').toUpperCase()
-        if (candidateTradingId || candidateStatus === 'CONFIRM' || candidateStatus === 'PENDING') {
-          created = candidate
-          break
-        }
-      } catch (error) {
-        lastRequestError = error
-        if (error instanceof MatchTraderApiError) {
-          const statusCode = Number(error.statusCode)
-          if ([400, 404, 405, 409, 422].includes(statusCode)) {
-            continue
+      for (const providerBody of createVariants) {
+        try {
+          const createdPayload = await this.client.post(
+            `/v1/accounts/${encodeURIComponent(brokerAccountUuid)}/trading-accounts`,
+            providerBody
+          )
+          const candidate = this.unwrapData(createdPayload)
+          providerPayloadCandidate = candidate
+
+          const candidateTradingId = this.findTradingAccountId(candidate)
+          const candidateStatus = String(candidate.status || '').toUpperCase()
+          if (candidateTradingId || candidateStatus === 'CONFIRM' || candidateStatus === 'PENDING') {
+            createdPayloadCandidate = candidate
+            break
           }
+        } catch (error) {
+          requestErrorCandidate = error
+          if (error instanceof MatchTraderApiError) {
+            const statusCode = Number(error.statusCode)
+            if ([400, 404, 405, 409, 422].includes(statusCode)) {
+              continue
+            }
+          }
+          throw error
         }
-        throw error
+      }
+
+      return {
+        created: createdPayloadCandidate,
+        providerPayload: providerPayloadCandidate,
+        requestError: requestErrorCandidate
       }
     }
 
-    if (!created && lastProviderPayload) {
-      created = lastProviderPayload
+    let brokerAccountUuidUsed = brokerAccount.uuid
+    let attempt = await tryCreateTradingAccount(brokerAccountUuidUsed)
+
+    // In sandbox/shared environments, existing account UUID may not be writable for current token.
+    // Retry once with a freshly created broker account owned by this integration.
+    if (
+      !attempt.created &&
+      attempt.requestError instanceof MatchTraderApiError &&
+      Number(attempt.requestError.statusCode) === 401 &&
+      brokerAccount.source === 'existing'
+    ) {
+      const preferredCreationPassword = this.pickFirstString([
+        body.trading_password,
+        body.tradingPassword,
+        body.broker_password,
+        body.brokerPassword
+      ])
+      try {
+        const freshBrokerAccount = await this.createBrokerAccountForUser(
+          user,
+          preferredCreationPassword || undefined
+        )
+        const freshBrokerUuid = this.pickFirstString([
+          freshBrokerAccount.uuid,
+          freshBrokerAccount.accountUuid,
+          freshBrokerAccount.id
+        ])
+        if (freshBrokerUuid && freshBrokerUuid !== brokerAccountUuidUsed) {
+          brokerAccountUuidUsed = freshBrokerUuid
+          const retryAttempt = await tryCreateTradingAccount(brokerAccountUuidUsed)
+          if (retryAttempt.created) {
+            attempt = retryAttempt
+          } else {
+            attempt = {
+              created: null,
+              providerPayload: retryAttempt.providerPayload || attempt.providerPayload,
+              requestError: retryAttempt.requestError || attempt.requestError
+            }
+          }
+        }
+      } catch (createFreshAccountError) {
+        // Keep original error context if fallback account creation is not allowed.
+      }
     }
-    if (!created && lastRequestError) {
-      throw lastRequestError
+
+    let created = attempt.created
+    if (!created && attempt.providerPayload) {
+      created = attempt.providerPayload
+    }
+    if (!created && attempt.requestError) {
+      throw attempt.requestError
     }
     if (!created) {
       throw new MatchTraderApiError('Trading account creation failed for all provider payload variants', {
@@ -736,7 +791,7 @@ class MatchTraderService {
           pending: true,
           status: providerStatus,
           mode,
-          broker_account_uuid: brokerAccount.uuid,
+          broker_account_uuid: brokerAccountUuidUsed,
           password_applied: Boolean(brokerAccount.password_applied),
           selected_offer: selectedOffer,
           message: 'Trading account request submitted and awaits broker confirmation.',
@@ -773,7 +828,7 @@ class MatchTraderService {
     const data = {
       trading_account_id: String(tradingAccountId),
       mode,
-      broker_account_uuid: brokerAccount.uuid,
+      broker_account_uuid: brokerAccountUuidUsed,
       password_applied: Boolean(brokerAccount.password_applied),
       selected_offer: selectedOffer,
       provider: created
