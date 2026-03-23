@@ -85,6 +85,202 @@ class MatchTraderService {
     return `Mt#${raw.slice(0, 16)}1!`
   }
 
+  pickFirstString(candidates = []) {
+    for (const candidate of candidates) {
+      if (candidate === undefined || candidate === null) continue
+      const value = String(candidate).trim()
+      if (value) return value
+    }
+    return ''
+  }
+
+  extractBrokerAccountUuid(payload = {}) {
+    if (!payload || typeof payload !== 'object') return ''
+    return this.pickFirstString([
+      payload.accountUuid,
+      payload.accountUUID,
+      payload.accountId,
+      payload.accountInfo && payload.accountInfo.uuid,
+      payload.accountInfo && payload.accountInfo.accountUuid,
+      payload.accountInfo && payload.accountInfo.accountUUID,
+      payload.accountInfo && payload.accountInfo.id,
+      payload.account && payload.account.uuid,
+      payload.account && payload.account.accountUuid,
+      payload.brokerAccountUuid,
+      payload.brokerAccountUUID
+    ])
+  }
+
+  extractSystemUuid(payload = {}) {
+    if (!payload || typeof payload !== 'object') return ''
+    return this.pickFirstString([
+      payload.systemUuid,
+      payload.systemUUID,
+      payload.systemId,
+      payload.system && payload.system.uuid,
+      payload.system && payload.systemUuid
+    ])
+  }
+
+  buildAccountPasswordChangePlans(accountUuid, newPassword, currentPassword = '') {
+    const normalizedAccountUuid = String(accountUuid || '').trim()
+    const normalizedNewPassword = String(newPassword || '').trim()
+    if (!normalizedAccountUuid || !normalizedNewPassword) return []
+
+    const payloads = [
+      { accountUuid: normalizedAccountUuid, newPassword: normalizedNewPassword },
+      { accountUuid: normalizedAccountUuid, password: normalizedNewPassword },
+      { uuid: normalizedAccountUuid, newPassword: normalizedNewPassword },
+      { uuid: normalizedAccountUuid, password: normalizedNewPassword }
+    ]
+
+    const normalizedCurrent = String(currentPassword || '').trim()
+    if (normalizedCurrent) {
+      payloads.push(
+        {
+          accountUuid: normalizedAccountUuid,
+          newPassword: normalizedNewPassword,
+          currentPassword: normalizedCurrent
+        },
+        {
+          accountUuid: normalizedAccountUuid,
+          newPassword: normalizedNewPassword,
+          oldPassword: normalizedCurrent
+        }
+      )
+    }
+
+    const paths = [
+      '/v1/accounts/change-password',
+      '/v1/account/change-password',
+      '/v1/accounts/password/change',
+      '/v1/change-password'
+    ]
+
+    return paths.flatMap((path) =>
+      payloads.map((body) => ({
+        method: 'POST',
+        path,
+        body
+      }))
+    )
+  }
+
+  buildTradingPasswordChangePlans({
+    tradingAccountId,
+    newPassword,
+    currentPassword = '',
+    systemUuid = ''
+  }) {
+    const login = String(tradingAccountId || '').trim()
+    const normalizedNewPassword = String(newPassword || '').trim()
+    if (!login || !normalizedNewPassword) return []
+
+    const normalizedCurrent = String(currentPassword || '').trim()
+
+    const postPayloads = [
+      { login, newPassword: normalizedNewPassword },
+      { login, password: normalizedNewPassword },
+      { tradingAccountLogin: login, newPassword: normalizedNewPassword },
+      { accountLogin: login, newPassword: normalizedNewPassword }
+    ]
+
+    if (normalizedCurrent) {
+      postPayloads.push(
+        { login, newPassword: normalizedNewPassword, currentPassword: normalizedCurrent },
+        { login, newPassword: normalizedNewPassword, oldPassword: normalizedCurrent },
+        { tradingAccountLogin: login, newPassword: normalizedNewPassword, oldPassword: normalizedCurrent }
+      )
+    }
+
+    const plans = []
+    const postPaths = [
+      '/v1/trading-account/change-password',
+      '/v1/trading-accounts/change-password',
+      '/v1/change-password'
+    ]
+    postPaths.forEach((path) => {
+      postPayloads.forEach((body) => {
+        plans.push({ method: 'POST', path, body })
+      })
+    })
+
+    const queryVariants = [
+      { login },
+      { accountLogin: login },
+      { tradingAccountLogin: login }
+    ]
+    if (systemUuid) {
+      queryVariants.forEach((query) => {
+        query.systemUuid = systemUuid
+      })
+    }
+
+    const patchBodies = [
+      { password: normalizedNewPassword },
+      { newPassword: normalizedNewPassword },
+      { tradingPassword: normalizedNewPassword }
+    ]
+    const patchPaths = ['/v1/trading-account', '/v1/trading-accounts']
+    patchPaths.forEach((path) => {
+      queryVariants.forEach((query) => {
+        patchBodies.forEach((body) => {
+          plans.push({
+            method: 'PATCH',
+            path,
+            query,
+            body
+          })
+        })
+      })
+    })
+
+    return plans
+  }
+
+  async executePasswordChangePlans(plans = []) {
+    let lastError = null
+    let preferredError = null
+
+    for (const plan of plans) {
+      try {
+        const method = String(plan.method || 'POST').toUpperCase()
+        if (method === 'PATCH') {
+          const payload = await this.client.patch(plan.path, plan.body || {}, plan.query || {})
+          return this.unwrapData(payload)
+        }
+        if (method === 'PUT') {
+          const payload = await this.client.put(plan.path, plan.body || {}, plan.query || {})
+          return this.unwrapData(payload)
+        }
+        if (method === 'GET') {
+          const payload = await this.client.get(plan.path, plan.query || {})
+          return this.unwrapData(payload)
+        }
+        const payload = await this.client.post(plan.path, plan.body || {}, plan.query || {})
+        return this.unwrapData(payload)
+      } catch (error) {
+        lastError = error
+        if (error instanceof MatchTraderApiError) {
+          const statusCode = Number(error.statusCode)
+          if (!preferredError && ![404, 405].includes(statusCode)) {
+            preferredError = error
+          }
+          if ([401, 403].includes(statusCode)) {
+            throw error
+          }
+          continue
+        }
+        throw error
+      }
+    }
+
+    throw preferredError || lastError || new MatchTraderApiError('Failed to change password in provider', {
+      statusCode: 502,
+      code: 'MATCH_TRADER_PASSWORD_CHANGE_FAILED'
+    })
+  }
+
   async getUserById(userId) {
     const rows = await this.query(
       `SELECT id, email, first_name, last_name
@@ -248,22 +444,55 @@ class MatchTraderService {
   }
 
   async ensureBrokerAccount(user, body = {}) {
-    if (body.broker_account_uuid) {
-      return { uuid: String(body.broker_account_uuid), source: 'request' }
+    const requestedPassword = this.pickFirstString([
+      body.trading_password,
+      body.tradingPassword
+    ])
+    const preferredCreationPassword = this.pickFirstString([
+      requestedPassword,
+      body.broker_password,
+      body.brokerPassword
+    ])
+    const currentPassword = this.pickFirstString([
+      body.current_password,
+      body.currentPassword,
+      body.old_password,
+      body.oldPassword
+    ])
+
+    const applyPasswordIfRequested = async (accountUuid) => {
+      const normalizedUuid = String(accountUuid || '').trim()
+      if (!normalizedUuid || !requestedPassword) return false
+      const plans = this.buildAccountPasswordChangePlans(normalizedUuid, requestedPassword, currentPassword)
+      await this.executePasswordChangePlans(plans)
+      return true
+    }
+
+    const brokerAccountUuidFromRequest = this.pickFirstString([
+      body.broker_account_uuid,
+      body.brokerAccountUuid
+    ])
+    if (brokerAccountUuidFromRequest) {
+      const passwordApplied = await applyPasswordIfRequested(brokerAccountUuidFromRequest)
+      return { uuid: brokerAccountUuidFromRequest, source: 'request', password_applied: passwordApplied }
     }
 
     const byEmail = await this.findBrokerAccountByEmail(user.email)
     if (byEmail) {
+      const existingUuid = this.pickFirstString([byEmail.uuid, byEmail.accountUuid, byEmail.id])
+      const passwordApplied = await applyPasswordIfRequested(existingUuid)
       return {
-        uuid: String(byEmail.uuid || byEmail.accountUuid || byEmail.id || ''),
-        source: 'existing'
+        uuid: existingUuid,
+        source: 'existing',
+        password_applied: passwordApplied
       }
     }
 
-    const created = await this.createBrokerAccountForUser(user, body.broker_password)
+    const created = await this.createBrokerAccountForUser(user, preferredCreationPassword || undefined)
     return {
-      uuid: String(created.uuid || created.accountUuid || created.id || ''),
-      source: 'created'
+      uuid: this.pickFirstString([created.uuid, created.accountUuid, created.id]),
+      source: 'created',
+      password_applied: Boolean(preferredCreationPassword)
     }
   }
 
@@ -390,6 +619,7 @@ class MatchTraderService {
           status: providerStatus,
           mode,
           broker_account_uuid: brokerAccount.uuid,
+          password_applied: Boolean(brokerAccount.password_applied),
           selected_offer: selectedOffer,
           message: 'Trading account request submitted and awaits broker confirmation.',
           provider: created
@@ -416,6 +646,7 @@ class MatchTraderService {
       trading_account_id: String(tradingAccountId),
       mode,
       broker_account_uuid: brokerAccount.uuid,
+      password_applied: Boolean(brokerAccount.password_applied),
       selected_offer: selectedOffer,
       provider: created
     }
@@ -497,35 +728,48 @@ class MatchTraderService {
     }
 
     await this.getLocalTradingAccountForUser(userId, tradingAccountId)
+    const currentPassword = this.pickFirstString([
+      body.current_password,
+      body.currentPassword,
+      body.old_password,
+      body.oldPassword
+    ])
 
-    const variants = [
-      { login: tradingAccountId, newPassword, currentPassword: body.current_password || undefined },
-      { login: tradingAccountId, password: newPassword, currentPassword: body.current_password || undefined },
-      { tradingAccountLogin: tradingAccountId, newPassword, oldPassword: body.current_password || undefined }
-    ]
+    let tradingAccountDetails = null
+    try {
+      tradingAccountDetails = await this.getTradingAccountDetailsFromProvider(tradingAccountId)
+    } catch (error) {
+      tradingAccountDetails = null
+    }
 
-    let lastError = null
-    for (const payload of variants) {
-      try {
-        const providerPayload = await this.client.post('/v1/change-password', payload)
-        const provider = this.unwrapData(providerPayload)
-        return {
-          trading_account_id: tradingAccountId,
-          changed: true,
-          provider
-        }
-      } catch (error) {
-        lastError = error
-        if (!(error instanceof MatchTraderApiError) || error.statusCode >= 500) {
-          break
-        }
+    let accountUuid = this.extractBrokerAccountUuid(tradingAccountDetails || {})
+    if (!accountUuid) {
+      const user = await this.getUserById(userId)
+      const byEmail = await this.findBrokerAccountByEmail(user.email)
+      if (byEmail) {
+        accountUuid = this.pickFirstString([byEmail.uuid, byEmail.accountUuid, byEmail.id])
       }
     }
 
-    throw lastError || new MatchTraderApiError('Failed to change trading password', {
-      statusCode: 502,
-      code: 'MATCH_TRADER_PASSWORD_CHANGE_FAILED'
-    })
+    const plans = [
+      ...(accountUuid
+        ? this.buildAccountPasswordChangePlans(accountUuid, newPassword, currentPassword)
+        : []),
+      ...this.buildTradingPasswordChangePlans({
+        tradingAccountId,
+        newPassword,
+        currentPassword,
+        systemUuid: this.extractSystemUuid(tradingAccountDetails || {})
+      })
+    ]
+
+    const provider = await this.executePasswordChangePlans(plans)
+    return {
+      trading_account_id: tradingAccountId,
+      changed: true,
+      account_uuid: accountUuid || null,
+      provider
+    }
   }
 
   async fetchWithPayloadVariants(path, method, variants) {

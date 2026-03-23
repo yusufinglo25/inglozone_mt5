@@ -2055,6 +2055,14 @@
  *               broker_password:
  *                 type: string
  *                 example: TempStrong#123
+ *               trading_password:
+ *                 type: string
+ *                 example: Trader#Secure2026
+ *                 description: Optional. Sets/updates the platform password for this customer's broker account during account creation.
+ *               current_password:
+ *                 type: string
+ *                 example: OldPass#2025
+ *                 description: Optional old password when provider requires current password for change.
  *     responses:
  *       201:
  *         description: Trading account created
@@ -2066,6 +2074,7 @@
  *                 trading_account_id: "1000123"
  *                 mode: REAL
  *                 broker_account_uuid: c7fb2e9a-13bb-4a95-8f60-8ee2f95af669
+ *                 password_applied: true
  *                 provider:
  *                   login: "1000123"
  *                   status: ACTIVE
@@ -2078,6 +2087,7 @@
  *               data:
  *                 pending: true
  *                 status: CONFIRM
+ *                 password_applied: true
  *                 message: Trading account request submitted and awaits broker confirmation.
  *                 selected_offer:
  *                   offer_uuid: 21f85522-c043-4ed5-ae99-d4c28a316b57
@@ -2172,7 +2182,7 @@
  * /api/matchtrader/customer/change-password:
  *   post:
  *     tags: [MatchTrader Customer]
- *     summary: Change trading account password
+ *     summary: Change trading platform password
  *     requestBody:
  *       required: true
  *       content:
@@ -2200,6 +2210,7 @@
  *               data:
  *                 trading_account_id: "1000123"
  *                 changed: true
+ *                 account_uuid: c7fb2e9a-13bb-4a95-8f60-8ee2f95af669
  *       400:
  *         description: Validation error
  *       401:
@@ -2319,6 +2330,14 @@
  *               initial_balance:
  *                 type: number
  *                 example: 10000
+ *               trading_password:
+ *                 type: string
+ *                 example: Trader#Secure2026
+ *                 description: Optional. Sets/updates the platform password for this customer's broker account during account creation.
+ *               current_password:
+ *                 type: string
+ *                 example: OldPass#2025
+ *                 description: Optional old password when provider requires current password for change.
  *     responses:
  *       201:
  *         description: Demo account created
@@ -2330,6 +2349,7 @@
  *                 trading_account_id: "2000456"
  *                 mode: DEMO
  *                 broker_account_uuid: c7fb2e9a-13bb-4a95-8f60-8ee2f95af669
+ *                 password_applied: true
  *                 initial_deposit:
  *                   trading_account_id: "2000456"
  *                   amount: 10000
