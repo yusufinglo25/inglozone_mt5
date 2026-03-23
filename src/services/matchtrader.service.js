@@ -80,6 +80,21 @@ class MatchTraderService {
     return ['true', '1', 'yes', 'y'].includes(normalized)
   }
 
+  normalizeLeverageValue(value) {
+    const raw = this.pickFirstString([value])
+    if (!raw) return ''
+    const compact = raw.replace(/\s+/g, '')
+    const matched = compact.match(/^(?:1:)?(\d+)$/i)
+    if (matched) return matched[1]
+    return raw
+  }
+
+  normalizeCurrencyValue(value) {
+    const raw = this.pickFirstString([value])
+    if (!raw) return ''
+    return raw.toUpperCase()
+  }
+
   generatePassword() {
     const raw = crypto.randomBytes(20).toString('base64url')
     return `Mt#${raw.slice(0, 16)}1!`
@@ -236,6 +251,73 @@ class MatchTraderService {
     })
 
     return plans
+  }
+
+  buildTradingAccountCreateVariants({
+    offerUuid,
+    mode,
+    selectedOffer,
+    body = {}
+  }) {
+    const normalizedMode = this.normalizeMode(mode)
+    const isDemo = normalizedMode === 'DEMO'
+    const commissionUuid = this.pickFirstString([body.commission_uuid, body.commissionUuid])
+    const requestedCurrency = this.normalizeCurrencyValue(body.currency)
+    const requestedLeverage = this.normalizeLeverageValue(body.leverage)
+    const offerCurrency = this.normalizeCurrencyValue(selectedOffer && selectedOffer.currency)
+    const offerLeverage = this.normalizeLeverageValue(selectedOffer && selectedOffer.leverage)
+    const preferredCurrency = requestedCurrency || offerCurrency
+    const preferredLeverage = requestedLeverage || offerLeverage
+
+    const base = {
+      offerUuid,
+      ...(commissionUuid ? { commissionUuid } : {})
+    }
+
+    const variants = [
+      {
+        ...base,
+        ...(preferredCurrency ? { currency: preferredCurrency } : {}),
+        ...(preferredLeverage ? { leverage: preferredLeverage } : {}),
+        ...(isDemo ? { demo: true } : {})
+      },
+      {
+        ...base,
+        ...(isDemo ? { demo: true } : {})
+      },
+      {
+        ...base,
+        ...(preferredCurrency ? { currency: preferredCurrency } : {}),
+        ...(isDemo ? { demo: true } : {})
+      },
+      {
+        ...base,
+        ...(preferredLeverage ? { leverage: preferredLeverage } : {}),
+        ...(isDemo ? { demo: true } : {})
+      }
+    ]
+
+    // Some broker setups infer DEMO by offer and reject explicit demo flag.
+    if (isDemo) {
+      variants.push(
+        {
+          ...base,
+          ...(preferredCurrency ? { currency: preferredCurrency } : {}),
+          ...(preferredLeverage ? { leverage: preferredLeverage } : {})
+        },
+        { ...base }
+      )
+    }
+
+    const deduped = []
+    const seen = new Set()
+    for (const variant of variants) {
+      const key = JSON.stringify(variant)
+      if (seen.has(key)) continue
+      seen.add(key)
+      deduped.push(variant)
+    }
+    return deduped
   }
 
   async executePasswordChangePlans(plans = []) {
@@ -596,19 +678,55 @@ class MatchTraderService {
       })
     }
 
-    const providerBody = {
+    const createVariants = this.buildTradingAccountCreateVariants({
       offerUuid,
-      ...(body.commission_uuid || body.commissionUuid ? { commissionUuid: body.commission_uuid || body.commissionUuid } : {}),
-      ...(body.currency ? { currency: body.currency } : {}),
-      ...(body.leverage ? { leverage: body.leverage } : {}),
-      ...(mode === 'DEMO' ? { demo: true } : {})
+      mode,
+      selectedOffer,
+      body
+    })
+
+    let created = null
+    let lastProviderPayload = null
+    let lastRequestError = null
+    for (const providerBody of createVariants) {
+      try {
+        const createdPayload = await this.client.post(
+          `/v1/accounts/${encodeURIComponent(brokerAccount.uuid)}/trading-accounts`,
+          providerBody
+        )
+        const candidate = this.unwrapData(createdPayload)
+        lastProviderPayload = candidate
+
+        const candidateTradingId = this.findTradingAccountId(candidate)
+        const candidateStatus = String(candidate.status || '').toUpperCase()
+        if (candidateTradingId || candidateStatus === 'CONFIRM' || candidateStatus === 'PENDING') {
+          created = candidate
+          break
+        }
+      } catch (error) {
+        lastRequestError = error
+        if (error instanceof MatchTraderApiError) {
+          const statusCode = Number(error.statusCode)
+          if ([400, 404, 405, 409, 422].includes(statusCode)) {
+            continue
+          }
+        }
+        throw error
+      }
     }
 
-    const createdPayload = await this.client.post(
-      `/v1/accounts/${encodeURIComponent(brokerAccount.uuid)}/trading-accounts`,
-      providerBody
-    )
-    const created = this.unwrapData(createdPayload)
+    if (!created && lastProviderPayload) {
+      created = lastProviderPayload
+    }
+    if (!created && lastRequestError) {
+      throw lastRequestError
+    }
+    if (!created) {
+      throw new MatchTraderApiError('Trading account creation failed for all provider payload variants', {
+        statusCode: 502,
+        code: 'TRADING_ACCOUNT_CREATION_FAILED'
+      })
+    }
 
     const tradingAccountId = this.findTradingAccountId(created)
     if (!tradingAccountId) {
@@ -624,6 +742,16 @@ class MatchTraderService {
           message: 'Trading account request submitted and awaits broker confirmation.',
           provider: created
         }
+      }
+      if (providerStatus === 'FAILED') {
+        throw new MatchTraderApiError('Trading account creation was rejected by provider', {
+          statusCode: 422,
+          code: 'TRADING_ACCOUNT_CREATION_REJECTED',
+          providerError: {
+            selected_offer: selectedOffer,
+            provider: created
+          }
+        })
       }
       throw new MatchTraderApiError('Broker API did not return trading account id', {
         statusCode: 502,

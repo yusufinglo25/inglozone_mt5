@@ -52,6 +52,16 @@ class MatchTraderClient {
     }
   }
 
+  resolveAuthHeaders() {
+    const raw = String(this.apiKey || '').trim()
+    const withoutBearer = raw.replace(/^Bearer\s+/i, '').trim()
+    const bearer = /^Bearer\s+/i.test(raw) ? raw : `Bearer ${withoutBearer}`
+    return {
+      authorization: bearer,
+      apiKey: withoutBearer
+    }
+  }
+
   buildUrl(pathname, query = {}) {
     const path = pathname.startsWith('/') ? pathname : `/${pathname}`
     const url = new URL(`${this.baseUrl}${path}`)
@@ -139,11 +149,13 @@ class MatchTraderClient {
     const requestId = crypto.randomUUID()
     const upperMethod = String(method || 'GET').toUpperCase()
     const url = this.buildUrl(path, query)
+    const authHeaders = this.resolveAuthHeaders()
 
     const normalizedHeaders = {
       Accept: 'application/json',
-      Authorization: this.apiKey,
-      'X-API-Key': this.apiKey,
+      Authorization: authHeaders.authorization,
+      'X-API-Key': authHeaders.apiKey,
+      'api-key': authHeaders.apiKey,
       ...headers
     }
 

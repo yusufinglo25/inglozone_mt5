@@ -2094,6 +2094,8 @@
  *                   trading_account_auto_creation: false
  *       400:
  *         description: Validation error
+ *       422:
+ *         description: Provider rejected account creation (offer/business-rule mismatch)
  *       401:
  *         description: Unauthorized
  *       502:
@@ -2358,6 +2360,8 @@
  *         description: Demo account request accepted and pending broker confirmation
  *       400:
  *         description: Validation error
+ *       422:
+ *         description: Provider rejected account creation (offer/business-rule mismatch)
  *       401:
  *         description: Unauthorized
  */
