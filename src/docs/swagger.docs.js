@@ -2016,3 +2016,499 @@
  *       200:
  *         description: Bank transfer rejected
  */
+
+/**
+ * @swagger
+ * /api/matchtrader/customer/create-account:
+ *   post:
+ *     tags: [MatchTrader Customer]
+ *     summary: Create customer trading account (REAL or DEMO)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [offer_uuid]
+ *             properties:
+ *               offer_uuid:
+ *                 type: string
+ *                 example: 11111111-2222-3333-4444-555555555555
+ *                 description: Offer UUID selected from GET /api/matchtrader/customer/offers.
+ *               mode:
+ *                 type: string
+ *                 enum: [REAL, DEMO]
+ *                 example: REAL
+ *               leverage:
+ *                 type: string
+ *                 example: "1:100"
+ *               currency:
+ *                 type: string
+ *                 example: USD
+ *               initial_balance:
+ *                 type: number
+ *                 example: 10000
+ *                 description: Used only when mode=DEMO.
+ *               broker_account_uuid:
+ *                 type: string
+ *                 example: c7fb2e9a-13bb-4a95-8f60-8ee2f95af669
+ *               broker_password:
+ *                 type: string
+ *                 example: TempStrong#123
+ *     responses:
+ *       201:
+ *         description: Trading account created
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 trading_account_id: "1000123"
+ *                 mode: REAL
+ *                 broker_account_uuid: c7fb2e9a-13bb-4a95-8f60-8ee2f95af669
+ *                 provider:
+ *                   login: "1000123"
+ *                   status: ACTIVE
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ *       502:
+ *         description: Provider integration failure
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/customer/accounts:
+ *   get:
+ *     tags: [MatchTrader Customer]
+ *     summary: Get all trading accounts linked to authenticated user
+ *     responses:
+ *       200:
+ *         description: Trading accounts fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 - trading_account_id: "1000123"
+ *                   mode: REAL
+ *                   status: ACTIVE
+ *                   leverage: "1:100"
+ *                   currency: USD
+ *                   balance: 1500.5
+ *                   equity: 1480.1
+ *               meta:
+ *                 count: 1
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/customer/offers:
+ *   get:
+ *     tags: [MatchTrader Customer]
+ *     summary: Get available Match-Trader account offers (use for account types like Standard/Pro/Raw/Zero)
+ *     parameters:
+ *       - in: query
+ *         name: mode
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [REAL, DEMO]
+ *         description: Optional filter by account mode.
+ *       - in: query
+ *         name: include_hidden
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *         description: Include hidden offers.
+ *     responses:
+ *       200:
+ *         description: Offers fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 - offer_uuid: f6cbaca3-cc96-4275-a784-12659032b544
+ *                   offer_name: Standard
+ *                   demo: false
+ *                   currency: USD
+ *                   leverage: "100"
+ *                   hidden: false
+ *                   description: Standard account
+ *                   verification_required: false
+ *               meta:
+ *                 count: 1
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/customer/change-password:
+ *   post:
+ *     tags: [MatchTrader Customer]
+ *     summary: Change trading account password
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [trading_account_id, new_password]
+ *             properties:
+ *               trading_account_id:
+ *                 type: string
+ *                 example: "1000123"
+ *               new_password:
+ *                 type: string
+ *                 example: StrongPass#2026
+ *               current_password:
+ *                 type: string
+ *                 example: OldPass#2025
+ *     responses:
+ *       200:
+ *         description: Password updated
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 trading_account_id: "1000123"
+ *                 changed: true
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Trading account not linked to user
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/customer/orders:
+ *   get:
+ *     tags: [MatchTrader Customer]
+ *     summary: Get active, pending, and closed orders for selected trading account
+ *     parameters:
+ *       - in: query
+ *         name: trading_account_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: "1000123"
+ *       - in: query
+ *         name: from
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - in: query
+ *         name: to
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *     responses:
+ *       200:
+ *         description: Orders fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 trading_account_id: "1000123"
+ *                 active_orders: []
+ *                 pending_orders: []
+ *                 closed_orders: []
+ *       400:
+ *         description: Missing trading_account_id
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/customer/history:
+ *   get:
+ *     tags: [MatchTrader Customer]
+ *     summary: Get full trading history for selected trading account
+ *     parameters:
+ *       - in: query
+ *         name: trading_account_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: "1000123"
+ *       - in: query
+ *         name: from
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - in: query
+ *         name: to
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *     responses:
+ *       200:
+ *         description: Trading history fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 trading_account_id: "1000123"
+ *                 history: []
+ *       400:
+ *         description: Missing trading_account_id
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/customer/create-demo:
+ *   post:
+ *     tags: [MatchTrader Customer]
+ *     summary: Create demo trading account with optional initial balance
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [offer_uuid]
+ *             properties:
+ *               offer_uuid:
+ *                 type: string
+ *                 example: 11111111-2222-3333-4444-555555555555
+ *                 description: Offer UUID selected from GET /api/matchtrader/customer/offers.
+ *               leverage:
+ *                 type: string
+ *                 example: "1:100"
+ *               currency:
+ *                 type: string
+ *                 example: USD
+ *               initial_balance:
+ *                 type: number
+ *                 example: 10000
+ *     responses:
+ *       201:
+ *         description: Demo account created
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 trading_account_id: "2000456"
+ *                 mode: DEMO
+ *                 broker_account_uuid: c7fb2e9a-13bb-4a95-8f60-8ee2f95af669
+ *                 initial_deposit:
+ *                   trading_account_id: "2000456"
+ *                   amount: 10000
+ *                   simulated: false
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/customer/demo-deposit:
+ *   post:
+ *     tags: [MatchTrader Customer]
+ *     summary: Deposit virtual/demo funds for a demo trading account (provider call with virtual fallback)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [trading_account_id, amount]
+ *             properties:
+ *               trading_account_id:
+ *                 type: string
+ *                 example: "2000456"
+ *               amount:
+ *                 type: number
+ *                 example: 5000
+ *               note:
+ *                 type: string
+ *                 example: bonus top-up
+ *     responses:
+ *       200:
+ *         description: Demo deposit processed
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 trading_account_id: "2000456"
+ *                 amount: 5000
+ *                 simulated: true
+ *                 reason: Provider did not accept demo credit, virtual handling applied
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Trading account not linked to user
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/customer/trade-access:
+ *   get:
+ *     tags: [MatchTrader Customer]
+ *     summary: Get trading platform access details (no auto-login)
+ *     parameters:
+ *       - in: query
+ *         name: trading_account_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: "1000123"
+ *     responses:
+ *       200:
+ *         description: Trade access data fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 trading_account_id: "1000123"
+ *                 platform_url: https://mtr-demo-prod.match-trader.com
+ *       400:
+ *         description: Missing trading_account_id
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/admin/accounts:
+ *   get:
+ *     tags: [MatchTrader Admin]
+ *     summary: Get all users with their linked trading accounts
+ *     responses:
+ *       200:
+ *         description: Admin account list fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 - user_id: "25110"
+ *                   email: trader@example.com
+ *                   first_name: John
+ *                   last_name: Doe
+ *                   trading_account_id: "1000123"
+ *                   mode: REAL
+ *                   status: ACTIVE
+ *               meta:
+ *                 count: 1
+ *       401:
+ *         description: Unauthorized admin token
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/admin/orders:
+ *   get:
+ *     tags: [MatchTrader Admin]
+ *     summary: Get global aggregated orders across all linked users/accounts
+ *     parameters:
+ *       - in: query
+ *         name: from
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - in: query
+ *         name: to
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *     responses:
+ *       200:
+ *         description: Aggregated order snapshot
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 active_orders: []
+ *                 pending_orders: []
+ *                 closed_orders: []
+ *                 summary:
+ *                   active_count: 0
+ *                   pending_count: 0
+ *                   closed_count: 0
+ *       401:
+ *         description: Unauthorized admin token
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/admin/user/{user_id}:
+ *   get:
+ *     tags: [MatchTrader Admin]
+ *     summary: Get user trading details (profile, accounts, balances, history)
+ *     parameters:
+ *       - in: path
+ *         name: user_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: "25110"
+ *       - in: query
+ *         name: from
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - in: query
+ *         name: to
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *     responses:
+ *       200:
+ *         description: User trading details fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 user:
+ *                   id: "25110"
+ *                   email: trader@example.com
+ *                   first_name: John
+ *                   last_name: Doe
+ *                 trading_accounts:
+ *                   - trading_account_id: "1000123"
+ *                     mode: REAL
+ *                     status: ACTIVE
+ *                     balance: 1200
+ *                     equity: 1189.5
+ *                     history: []
+ *                 balances:
+ *                   - trading_account_id: "1000123"
+ *                     balance: 1200
+ *                     equity: 1189.5
+ *                     currency: USD
+ *                 order_history: []
+ *       401:
+ *         description: Unauthorized admin token
+ *       404:
+ *         description: User not found
+ */

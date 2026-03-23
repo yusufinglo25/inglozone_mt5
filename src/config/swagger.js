@@ -126,6 +126,8 @@ function toOpenApiPath(pathname) {
 
 function resolveRoleModuleTag(openApiPath) {
   if (openApiPath === '/health') return 'Health'
+  if (openApiPath.startsWith('/api/matchtrader/customer')) return 'MatchTrader Customer'
+  if (openApiPath.startsWith('/api/matchtrader/admin')) return 'MatchTrader Admin'
 
   let role = 'Trader + Investor APIs'
   if (openApiPath.startsWith('/api/admin')) role = 'Admin APIs'
@@ -313,7 +315,19 @@ const MANUALLY_DOCUMENTED_OPERATIONS = new Set([
   'POST /api/settings/2fa/verify',
   'POST /api/settings/2fa/disable',
   'POST /api/settings/logout-all',
-  'POST /api/settings/logout-others'
+  'POST /api/settings/logout-others',
+  'POST /api/matchtrader/customer/create-account',
+  'GET /api/matchtrader/customer/accounts',
+  'GET /api/matchtrader/customer/offers',
+  'POST /api/matchtrader/customer/change-password',
+  'GET /api/matchtrader/customer/orders',
+  'GET /api/matchtrader/customer/history',
+  'POST /api/matchtrader/customer/create-demo',
+  'POST /api/matchtrader/customer/demo-deposit',
+  'GET /api/matchtrader/customer/trade-access',
+  'GET /api/matchtrader/admin/accounts',
+  'GET /api/matchtrader/admin/orders',
+  'GET /api/matchtrader/admin/user/{user_id}'
 ])
 
 function buildAutoPathDocs() {

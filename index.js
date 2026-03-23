@@ -153,6 +153,7 @@ const webhookRoutes = require('./src/webhooks/stripe.webhook')
 const kycRoutes = require('./src/routes/kyc.routes')
 const adminRoutes = require('./src/routes/admin.routes')
 const settingsRoutes = require('./src/routes/settings.routes')
+const matchTraderRoutes = require('./src/routes/matchtrader.routes')
 
 // Use routes
 app.use('/api/user', userRoutes)
@@ -164,6 +165,7 @@ app.use('/api/webhooks', webhookRoutes)
 app.use('/api/kyc', kycRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/settings', settingsRoutes)
+app.use('/api/matchtrader', matchTraderRoutes)
 
 // Error handling middleware
 app.use((err, req, res, next) => {
