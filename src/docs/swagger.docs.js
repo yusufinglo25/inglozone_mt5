@@ -2069,6 +2069,19 @@
  *                 provider:
  *                   login: "1000123"
  *                   status: ACTIVE
+ *       202:
+ *         description: Trading account request accepted and pending broker confirmation
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 pending: true
+ *                 status: CONFIRM
+ *                 message: Trading account request submitted and awaits broker confirmation.
+ *                 selected_offer:
+ *                   offer_uuid: 21f85522-c043-4ed5-ae99-d4c28a316b57
+ *                   trading_account_auto_creation: false
  *       400:
  *         description: Validation error
  *       401:
@@ -2124,6 +2137,12 @@
  *         schema:
  *           type: boolean
  *         description: Include hidden offers.
+ *       - in: query
+ *         name: instant_only
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *         description: Return only offers with trading_account_auto_creation=true.
  *     responses:
  *       200:
  *         description: Offers fetched
@@ -2140,6 +2159,8 @@
  *                   hidden: false
  *                   description: Standard account
  *                   verification_required: false
+ *                   trading_account_auto_creation: true
+ *                   initial_deposit: 50
  *               meta:
  *                 count: 1
  *       401:
@@ -2313,6 +2334,8 @@
  *                   trading_account_id: "2000456"
  *                   amount: 10000
  *                   simulated: false
+ *       202:
+ *         description: Demo account request accepted and pending broker confirmation
  *       400:
  *         description: Validation error
  *       401:

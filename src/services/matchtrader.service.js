@@ -276,19 +276,25 @@ class MatchTraderService {
       leverage: offer.leverage !== undefined && offer.leverage !== null ? String(offer.leverage) : null,
       hidden: Boolean(offer.hidden),
       description: offer.description || null,
-      verification_required: Boolean(offer.verificationRequired)
+      verification_required: Boolean(offer.verificationRequired),
+      trading_account_auto_creation: Boolean(offer.tradingAccountAutoCreation),
+      initial_deposit: offer.initialDeposit !== undefined && offer.initialDeposit !== null
+        ? this.toSafeNumber(offer.initialDeposit)
+        : null
     }
   }
 
   async listOffers(query = {}) {
     const mode = String(query.mode || '').trim().toUpperCase()
     const includeHidden = this.toBoolean(query.include_hidden)
+    const instantOnly = this.toBoolean(query.instant_only)
     const payload = await this.client.get('/v1/offers')
     const offers = this.parseCollection(payload).map((offer) => this.mapOffer(offer))
 
     return offers.filter((offer) => {
       if (!offer.offer_uuid) return false
       if (!includeHidden && offer.hidden) return false
+      if (instantOnly && !offer.trading_account_auto_creation) return false
       if (mode === 'DEMO' && !offer.demo) return false
       if (mode === 'REAL' && offer.demo) return false
       return true
@@ -342,6 +348,16 @@ class MatchTraderService {
 
     const selectedOffer = await this.resolveOfferForMode(mode, requestedOfferUuid)
     const offerUuid = selectedOffer.offer_uuid
+    if (!selectedOffer.trading_account_auto_creation) {
+      throw new MatchTraderApiError(
+        'Selected offer requires manual confirmation. Choose an offer with trading_account_auto_creation=true.',
+        {
+          statusCode: 400,
+          code: 'OFFER_REQUIRES_MANUAL_CONFIRMATION',
+          providerError: { selected_offer: selectedOffer }
+        }
+      )
+    }
 
     const brokerAccount = await this.ensureBrokerAccount(user, body)
     if (!brokerAccount.uuid) {
@@ -367,6 +383,18 @@ class MatchTraderService {
 
     const tradingAccountId = this.findTradingAccountId(created)
     if (!tradingAccountId) {
+      const providerStatus = String(created.status || '').toUpperCase()
+      if (providerStatus === 'CONFIRM' || providerStatus === 'PENDING') {
+        return {
+          pending: true,
+          status: providerStatus,
+          mode,
+          broker_account_uuid: brokerAccount.uuid,
+          selected_offer: selectedOffer,
+          message: 'Trading account request submitted and awaits broker confirmation.',
+          provider: created
+        }
+      }
       throw new MatchTraderApiError('Broker API did not return trading account id', {
         statusCode: 502,
         code: 'PROVIDER_INVALID_RESPONSE',

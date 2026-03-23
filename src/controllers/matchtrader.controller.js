@@ -28,6 +28,9 @@ function sendError(res, error) {
 exports.createTradingAccount = async (req, res) => {
   try {
     const data = await matchTraderService.createTradingAccountForUser(req.user.id, req.body || {})
+    if (data && data.pending) {
+      return sendSuccess(res, data, undefined, 202)
+    }
     return sendSuccess(res, data, undefined, 201)
   } catch (error) {
     return sendError(res, error)
@@ -82,6 +85,9 @@ exports.getCustomerHistory = async (req, res) => {
 exports.createDemoAccount = async (req, res) => {
   try {
     const data = await matchTraderService.createDemoAccount(req.user.id, req.body || {})
+    if (data && data.pending) {
+      return sendSuccess(res, data, undefined, 202)
+    }
     return sendSuccess(res, data, undefined, 201)
   } catch (error) {
     return sendError(res, error)
