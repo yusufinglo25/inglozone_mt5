@@ -2564,7 +2564,7 @@
  * /api/matchtrader/customer/trade-access:
  *   get:
  *     tags: [MatchTrader Customer]
- *     summary: Get trading platform access details (no auto-login)
+ *     summary: Get direct Match-Trader SSO launch URL (one-time token)
  *     parameters:
  *       - in: query
  *         name: trading_account_id
@@ -2572,9 +2572,30 @@
  *         schema:
  *           type: string
  *         example: "1000123"
+ *       - in: query
+ *         name: validity_seconds
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 5
+ *           maximum: 3600
+ *         description: Optional one-time token validity in seconds (default 30).
+ *         example: 30
+ *       - in: query
+ *         name: redirect
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *         description: If true, API returns 302 redirect to launch_url instead of JSON.
+ *       - in: query
+ *         name: sso_disabled
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *         description: Disable SSO token generation and return platform_url only.
  *     responses:
  *       200:
- *         description: Trade access data fetched
+ *         description: Trade launch data fetched
  *         content:
  *           application/json:
  *             example:
@@ -2582,10 +2603,17 @@
  *               data:
  *                 trading_account_id: "1000123"
  *                 platform_url: https://mtr-demo-prod.match-trader.com
+ *                 launch_url: https://mtr-demo-prod.match-trader.com/?auth=eyJhbGciOi...
+ *                 sso_enabled: true
+ *                 token_validity_seconds: 30
+ *       302:
+ *         description: Redirect to Match-Trader launch URL (when redirect=true)
  *       400:
  *         description: Missing trading_account_id
  *       401:
  *         description: Unauthorized
+ *       403:
+ *         description: SSO token request rejected (missing API permission or IP not whitelisted)
  */
 
 /**

@@ -25,6 +25,10 @@ function sendError(res, error) {
   })
 }
 
+function isTruthyQuery(value) {
+  return ['true', '1', 'yes', 'y'].includes(String(value || '').trim().toLowerCase())
+}
+
 exports.createTradingAccount = async (req, res) => {
   try {
     const data = await matchTraderService.createTradingAccountForUser(req.user.id, req.body || {})
@@ -124,6 +128,9 @@ exports.demoDeposit = async (req, res) => {
 exports.getTradeAccess = async (req, res) => {
   try {
     const data = await matchTraderService.getTradeAccess(req.user.id, req.query || {})
+    if (isTruthyQuery(req.query?.redirect)) {
+      return res.redirect(302, data.launch_url || data.platform_url)
+    }
     return sendSuccess(res, data)
   } catch (error) {
     return sendError(res, error)

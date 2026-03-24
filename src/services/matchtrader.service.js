@@ -11,6 +11,21 @@ class MatchTraderService {
       'https://mtr-demo-prod.match-trader.com/'
     ).replace(/\/+$/, '')
     this.defaultOfferUuid = String(process.env.MATCH_TRADER_DEFAULT_OFFER_UUID || '').trim()
+    this.ssoTokenPath = String(
+      options.ssoTokenPath ||
+      process.env.MATCH_TRADER_SSO_TOKEN_PATH ||
+      '/v1/one-time-token'
+    ).trim() || '/v1/one-time-token'
+    this.ssoAuthQueryParam = String(
+      options.ssoAuthQueryParam ||
+      process.env.MATCH_TRADER_SSO_AUTH_QUERY_PARAM ||
+      'auth'
+    ).trim() || 'auth'
+    this.defaultSsoTokenValiditySeconds = this.resolveSsoTokenValiditySeconds(
+      options.defaultSsoTokenValiditySeconds ||
+      process.env.MATCH_TRADER_SSO_TOKEN_VALIDITY_SECONDS ||
+      30
+    )
   }
 
   async query(sql, params = []) {
@@ -96,6 +111,23 @@ class MatchTraderService {
     if (typeof value === 'boolean') return value
     const normalized = String(value || '').trim().toLowerCase()
     return ['true', '1', 'yes', 'y'].includes(normalized)
+  }
+
+  isDisabledBoolean(value, defaultValue = false) {
+    if (value === undefined || value === null || String(value).trim() === '') {
+      return defaultValue
+    }
+    const normalized = String(value).trim().toLowerCase()
+    if (['true', '1', 'yes', 'y'].includes(normalized)) return true
+    if (['false', '0', 'no', 'n'].includes(normalized)) return false
+    return defaultValue
+  }
+
+  resolveSsoTokenValiditySeconds(input) {
+    const parsed = Number.parseInt(String(input || '').trim(), 10)
+    if (!Number.isFinite(parsed) || parsed <= 0) return 30
+    // Keep short token lifetime for safety while allowing operational flexibility.
+    return Math.max(5, Math.min(parsed, 3600))
   }
 
   normalizeLeverageValue(value) {
@@ -218,6 +250,96 @@ class MatchTraderService {
       payload.accountInfo && payload.accountInfo.serverUuid,
       payload.accountInfo && payload.accountInfo.serverUUID
     ])
+  }
+
+  extractOneTimeTokenFromPayload(payload = {}) {
+    if (!payload) return ''
+    if (typeof payload === 'string') return String(payload).trim()
+
+    const normalized = this.unwrapData(payload)
+    if (typeof normalized === 'string') return String(normalized).trim()
+    if (!normalized || typeof normalized !== 'object') return ''
+
+    const direct = this.pickFirstString([
+      normalized.token,
+      normalized.oneTimeToken,
+      normalized.one_time_token,
+      normalized.auth,
+      normalized.authToken,
+      normalized.ott,
+      normalized.jwt
+    ])
+    if (direct) return direct
+
+    return this.pickFirstString([
+      normalized.data && normalized.data.token,
+      normalized.data && normalized.data.oneTimeToken,
+      normalized.result && normalized.result.token,
+      normalized.payload && normalized.payload.token
+    ])
+  }
+
+  buildTradeLaunchUrl(oneTimeToken) {
+    const normalizedToken = this.pickFirstString([oneTimeToken])
+    if (!normalizedToken) return this.platformUrl
+
+    const launchUrl = new URL(`${this.platformUrl}/`)
+    launchUrl.searchParams.set(this.ssoAuthQueryParam, normalizedToken)
+    return launchUrl.toString()
+  }
+
+  async generateOneTimeTokenForUserEmail(email, options = {}) {
+    const normalizedEmail = String(email || '').trim().toLowerCase()
+    if (!normalizedEmail) {
+      throw new MatchTraderApiError('User email is required to generate Match-Trader SSO link', {
+        statusCode: 422,
+        code: 'MATCH_TRADER_SSO_VALIDATION_ERROR'
+      })
+    }
+
+    const validitySeconds = this.resolveSsoTokenValiditySeconds(
+      options.validitySeconds ||
+      options.validity_seconds ||
+      options.validityTime ||
+      options.validity_time ||
+      this.defaultSsoTokenValiditySeconds
+    )
+
+    let payload
+    try {
+      payload = await this.fetchWithPayloadVariants(this.ssoTokenPath, 'POST', [
+        { email: normalizedEmail, validityTime: validitySeconds },
+        { email: normalizedEmail, validity_time: validitySeconds },
+        { email: normalizedEmail, expiresIn: validitySeconds }
+      ])
+    } catch (error) {
+      if (error instanceof MatchTraderApiError && [401, 403].includes(Number(error.statusCode))) {
+        throw new MatchTraderApiError(
+          'Match-Trader SSO token request rejected. Check API access rights and IP whitelist.',
+          {
+            statusCode: error.statusCode,
+            code: 'MATCH_TRADER_SSO_NOT_ALLOWED',
+            providerError: error.providerError || null
+          }
+        )
+      }
+      throw error
+    }
+
+    const oneTimeToken = this.extractOneTimeTokenFromPayload(payload)
+    if (!oneTimeToken) {
+      throw new MatchTraderApiError('Match-Trader did not return a one-time token', {
+        statusCode: 502,
+        code: 'MATCH_TRADER_SSO_INVALID_RESPONSE',
+        providerError: this.unwrapData(payload)
+      })
+    }
+
+    return {
+      one_time_token: oneTimeToken,
+      token_validity_seconds: validitySeconds,
+      launch_url: this.buildTradeLaunchUrl(oneTimeToken)
+    }
   }
 
   buildAccountPasswordChangePlans(accountUuid, newPassword, currentPassword = '') {
@@ -1909,10 +2031,37 @@ class MatchTraderService {
     }
 
     await this.getLocalTradingAccountForUser(userId, tradingAccountId)
+    const user = await this.getUserById(userId)
+    const disabledByQuery = this.isDisabledBoolean(
+      query.sso_disabled !== undefined ? query.sso_disabled : query.disable_sso,
+      false
+    )
 
-    return {
+    const basePayload = {
       trading_account_id: tradingAccountId,
       platform_url: this.platformUrl
+    }
+
+    if (disabledByQuery) {
+      return {
+        ...basePayload,
+        sso_enabled: false
+      }
+    }
+
+    const launch = await this.generateOneTimeTokenForUserEmail(user.email, {
+      validitySeconds: this.pickFirstString([
+        query.validity_seconds,
+        query.validity_time,
+        query.validityTime
+      ])
+    })
+
+    return {
+      ...basePayload,
+      launch_url: launch.launch_url,
+      sso_enabled: true,
+      token_validity_seconds: launch.token_validity_seconds
     }
   }
 
