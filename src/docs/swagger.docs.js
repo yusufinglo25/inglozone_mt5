@@ -2246,6 +2246,18 @@
  *         schema:
  *           type: string
  *         description: Optional override if provider requires explicit systemUuid.
+ *       - in: query
+ *         name: statuses
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Optional comma-separated statuses for history fallback (for example FILLED,CANCELLED,REJECTED,ADDED).
+ *       - in: query
+ *         name: include_history
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *         description: If true, merges order-history entries into closed_orders.
  *     responses:
  *       200:
  *         description: Orders fetched
@@ -2260,6 +2272,72 @@
  *                 closed_orders: []
  *       400:
  *         description: Missing trading_account_id
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/customer/all-orders:
+ *   get:
+ *     tags: [MatchTrader Customer]
+ *     summary: Get active, pending, and closed orders across all user trading accounts
+ *     parameters:
+ *       - in: query
+ *         name: from
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - in: query
+ *         name: to
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - in: query
+ *         name: system_uuid
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Optional explicit system UUID override.
+ *       - in: query
+ *         name: statuses
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Optional comma-separated statuses for order-history fallback.
+ *       - in: query
+ *         name: include_history
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *         description: If true, merges history records into closed orders.
+ *     responses:
+ *       200:
+ *         description: Orders fetched from all trading accounts
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 active_orders:
+ *                   - trading_account_id: "91350"
+ *                     account_mode: DEMO
+ *                     order: {}
+ *                 pending_orders:
+ *                   - trading_account_id: "91350"
+ *                     account_mode: DEMO
+ *                     order: {}
+ *                 closed_orders:
+ *                   - trading_account_id: "91282"
+ *                     account_mode: REAL
+ *                     order: {}
+ *                 summary:
+ *                   trading_accounts_count: 2
+ *                   active_count: 1
+ *                   pending_count: 1
+ *                   closed_count: 1
  *       401:
  *         description: Unauthorized
  */
@@ -2295,6 +2373,12 @@
  *         schema:
  *           type: string
  *         description: Optional override if provider requires explicit systemUuid.
+ *       - in: query
+ *         name: statuses
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Optional comma-separated statuses (default FILLED,CANCELLED,REJECTED,ADDED).
  *     responses:
  *       200:
  *         description: Trading history fetched

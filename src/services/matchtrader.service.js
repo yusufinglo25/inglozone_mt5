@@ -1220,6 +1220,45 @@ class MatchTraderService {
     })
   }
 
+  normalizeOrderHistoryStatuses(filters = {}) {
+    const byArray = Array.isArray(filters.statuses) ? filters.statuses : null
+    const byCsv = typeof filters.statuses === 'string' ? filters.statuses.split(',') : null
+    const byStatusCsv = typeof filters.status === 'string' ? filters.status.split(',') : null
+    const candidates = byArray || byCsv || byStatusCsv || []
+
+    const normalized = candidates
+      .map((item) => String(item || '').trim().toUpperCase())
+      .filter(Boolean)
+
+    if (normalized.length) {
+      return Array.from(new Set(normalized))
+    }
+
+    return ['FILLED', 'CANCELLED', 'REJECTED', 'ADDED']
+  }
+
+  mergeOrderCollections(primary = [], secondary = []) {
+    const output = []
+    const seen = new Set()
+
+    const pushUnique = (item) => {
+      const key = this.pickFirstString([
+        item && item.id,
+        item && item.orderId,
+        item && item.uuid,
+        item && item.closingOrderID,
+        item && item.ticket
+      ]) || JSON.stringify(item || {})
+
+      if (seen.has(key)) return
+      seen.add(key)
+      output.push(item)
+    }
+
+    ;[...(primary || []), ...(secondary || [])].forEach(pushUnique)
+    return output
+  }
+
   buildTradingAccountQueryVariants(tradingAccountId, baseFilters = {}, systemUuid = '') {
     const queryBases = [
       { login: tradingAccountId },
@@ -1293,7 +1332,35 @@ class MatchTraderService {
     )
 
     const active = this.parseCollection(activeOrders)
-    const closed = this.parseCollection(closedOrders)
+    let closed = this.parseCollection(closedOrders)
+    const includeHistoryFallback = String(
+      filters.include_history !== undefined ? filters.include_history : (filters.includeHistory || '')
+    ).toLowerCase()
+
+    if (closed.length === 0 || ['true', '1', 'yes', 'y'].includes(includeHistoryFallback)) {
+      try {
+        const historyFilters = { ...filters }
+        if (!historyFilters.from) {
+          historyFilters.from = '2000-01-01T00:00:00.000Z'
+        }
+        if (!historyFilters.limit) {
+          historyFilters.limit = 1000
+        }
+        if (!historyFilters.statuses && !historyFilters.status) {
+          historyFilters.statuses = ['FILLED', 'CANCELLED', 'REJECTED']
+        }
+
+        const historyOrders = await this.getOrderHistoryByLogin(
+          tradingAccountId,
+          historyFilters,
+          options
+        )
+        closed = this.mergeOrderCollections(closed, historyOrders)
+      } catch (error) {
+        // Keep closed positions result even if history endpoint fails.
+      }
+    }
+
     const pending = this.classifyPendingOrders(active)
 
     return {
@@ -1327,19 +1394,23 @@ class MatchTraderService {
   async getOrderHistoryByLogin(tradingAccountId, filters = {}, options = {}) {
     const baseBody = {
       ...(filters.from ? { from: filters.from } : {}),
-      ...(filters.to ? { to: filters.to } : {})
+      ...(filters.to ? { to: filters.to } : {}),
+      ...(filters.limit ? { limit: Number(filters.limit) } : {})
     }
     const systemUuid = await this.resolveTradingSystemUuid(tradingAccountId, filters, options)
     const systemBody = systemUuid ? { systemUuid } : {}
+    const statuses = this.normalizeOrderHistoryStatuses(filters)
 
     const payload = await this.fetchWithPayloadVariants(
       '/v1/trading-accounts/trading-data/order-history',
       'POST',
       [
-        { ...baseBody, ...systemBody, logins: [tradingAccountId] },
-        { ...baseBody, ...systemBody, loginList: [tradingAccountId] },
-        { ...baseBody, ...systemBody, tradingAccountLogins: [tradingAccountId] },
-        { ...baseBody, ...systemBody, accountLogins: [tradingAccountId] }
+        { ...baseBody, ...systemBody, statuses, logins: [tradingAccountId] },
+        { ...baseBody, ...systemBody, statuses, loginList: [tradingAccountId] },
+        { ...baseBody, ...systemBody, statuses, tradingAccountLogins: [tradingAccountId] },
+        { ...baseBody, ...systemBody, statuses, accountLogins: [tradingAccountId] },
+        { ...baseBody, ...systemBody, statuses: ['FILLED', 'CANCELLED', 'REJECTED'], logins: [tradingAccountId] },
+        { ...baseBody, ...systemBody, statuses: ['FILLED', 'ADDED'], logins: [tradingAccountId] }
       ]
     )
 
@@ -1376,6 +1447,71 @@ class MatchTraderService {
     return {
       trading_account_id: tradingAccountId,
       history: orderHistory
+    }
+  }
+
+  async getCustomerAllOrders(userId, query = {}) {
+    const user = await this.getUserById(userId)
+    try {
+      await this.syncLocalTradingAccountsForUser(userId, user)
+    } catch (error) {
+      console.warn(`[MatchTrader][sync-warning] user=${userId} message=${error.message}`)
+    }
+
+    const accounts = await this.listLocalTradingAccountsByUser(userId)
+    const providerErrors = []
+
+    const aggregated = await this.mapWithConcurrency(accounts, async (account) => {
+      try {
+        const orders = await this.fetchOrdersByLogin(account.id, query, {
+          userEmail: user.email
+        })
+        return {
+          account,
+          orders
+        }
+      } catch (error) {
+        providerErrors.push({
+          trading_account_id: account.id,
+          account_mode: account.mode,
+          message: error.message
+        })
+        return {
+          account,
+          orders: {
+            active_orders: [],
+            pending_orders: [],
+            closed_orders: []
+          }
+        }
+      }
+    }, 4)
+
+    const active = []
+    const pending = []
+    const closed = []
+
+    aggregated.forEach((row) => {
+      const meta = {
+        trading_account_id: row.account.id,
+        account_mode: row.account.mode
+      }
+      row.orders.active_orders.forEach((order) => active.push({ ...meta, order }))
+      row.orders.pending_orders.forEach((order) => pending.push({ ...meta, order }))
+      row.orders.closed_orders.forEach((order) => closed.push({ ...meta, order }))
+    })
+
+    return {
+      active_orders: active,
+      pending_orders: pending,
+      closed_orders: closed,
+      summary: {
+        trading_accounts_count: accounts.length,
+        active_count: active.length,
+        pending_count: pending.length,
+        closed_count: closed.length
+      },
+      ...(providerErrors.length ? { provider_errors: providerErrors } : {})
     }
   }
 

@@ -11,6 +11,7 @@ router.get('/customer/accounts', authMiddleware.verifyToken, controller.getCusto
 router.get('/customer/offers', authMiddleware.verifyToken, controller.getCustomerOffers)
 router.post('/customer/change-password', authMiddleware.verifyToken, controller.changeTradingPassword)
 router.get('/customer/orders', authMiddleware.verifyToken, controller.getCustomerOrders)
+router.get('/customer/all-orders', authMiddleware.verifyToken, controller.getCustomerAllOrders)
 router.get('/customer/history', authMiddleware.verifyToken, controller.getCustomerHistory)
 router.post('/customer/create-demo', authMiddleware.verifyToken, controller.createDemoAccount)
 router.post('/customer/demo-deposit', authMiddleware.verifyToken, controller.demoDeposit)

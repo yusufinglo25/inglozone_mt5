@@ -321,6 +321,7 @@ const MANUALLY_DOCUMENTED_OPERATIONS = new Set([
   'GET /api/matchtrader/customer/offers',
   'POST /api/matchtrader/customer/change-password',
   'GET /api/matchtrader/customer/orders',
+  'GET /api/matchtrader/customer/all-orders',
   'GET /api/matchtrader/customer/history',
   'POST /api/matchtrader/customer/create-demo',
   'POST /api/matchtrader/customer/demo-deposit',

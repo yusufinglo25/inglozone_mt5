@@ -73,6 +73,15 @@ exports.getCustomerOrders = async (req, res) => {
   }
 }
 
+exports.getCustomerAllOrders = async (req, res) => {
+  try {
+    const data = await matchTraderService.getCustomerAllOrders(req.user.id, req.query || {})
+    return sendSuccess(res, data)
+  } catch (error) {
+    return sendError(res, error)
+  }
+}
+
 exports.getCustomerHistory = async (req, res) => {
   try {
     const data = await matchTraderService.getCustomerHistory(req.user.id, req.query || {})
