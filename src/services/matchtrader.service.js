@@ -69,8 +69,27 @@ class MatchTraderService {
   }
 
   toSafeNumber(value) {
+    if (typeof value === 'string') {
+      const normalized = value.replace(/,/g, '').trim()
+      if (!normalized) return null
+      const parsedFromString = Number(normalized)
+      return Number.isFinite(parsedFromString) ? parsedFromString : null
+    }
     const parsed = Number(value)
     return Number.isFinite(parsed) ? parsed : null
+  }
+
+  toSafeNumberOrDefault(value, defaultValue = 0) {
+    const parsed = this.toSafeNumber(value)
+    return parsed === null ? defaultValue : parsed
+  }
+
+  pickFirstNumber(candidates = []) {
+    for (const candidate of candidates) {
+      const parsed = this.toSafeNumber(candidate)
+      if (parsed !== null) return parsed
+    }
+    return null
   }
 
   toBoolean(value) {
@@ -92,6 +111,49 @@ class MatchTraderService {
     const raw = this.pickFirstString([value])
     if (!raw) return ''
     return raw.toUpperCase()
+  }
+
+  extractTradingStatus(payload = {}) {
+    return this.pickFirstString([
+      payload.status,
+      payload.access,
+      payload.state
+    ])
+  }
+
+  extractTradingCurrency(payload = {}) {
+    return this.pickFirstString([
+      payload.currency,
+      payload.financeInfo && payload.financeInfo.currency,
+      payload.accountInfo && payload.accountInfo.currency
+    ])
+  }
+
+  extractTradingLeverage(payload = {}) {
+    return this.pickFirstString([
+      payload.leverage,
+      payload.financeInfo && payload.financeInfo.leverage
+    ])
+  }
+
+  extractTradingBalance(payload = {}) {
+    return this.pickFirstNumber([
+      payload.balance,
+      payload.financeInfo && payload.financeInfo.balance,
+      payload.accountInfo && payload.accountInfo.balance,
+      payload.statistics && payload.statistics.balance
+    ])
+  }
+
+  extractTradingEquity(payload = {}) {
+    const equity = this.pickFirstNumber([
+      payload.equity,
+      payload.financeInfo && payload.financeInfo.equity,
+      payload.accountInfo && payload.accountInfo.equity,
+      payload.statistics && payload.statistics.equity
+    ])
+    if (equity !== null) return equity
+    return this.extractTradingBalance(payload)
   }
 
   extractProviderGeneratedPassword(payload = {}) {
@@ -972,12 +1034,14 @@ class MatchTraderService {
     return data
   }
 
-  async getTradingAccountDetailsFromProvider(tradingAccountId) {
-    const variants = [
-      { login: tradingAccountId },
-      { accountLogin: tradingAccountId },
-      { tradingAccountLogin: tradingAccountId }
-    ]
+  async getTradingAccountDetailsFromProvider(tradingAccountId, options = {}) {
+    const normalizedTradingAccountId = String(tradingAccountId || '').trim()
+    const requestedSystemUuid = this.pickFirstString([options.systemUuid])
+    const variants = this.buildTradingAccountQueryVariants(
+      normalizedTradingAccountId,
+      {},
+      requestedSystemUuid
+    )
 
     let lastError = null
     for (const query of variants) {
@@ -988,6 +1052,38 @@ class MatchTraderService {
         lastError = error
       }
     }
+
+    const fallbackQueries = [
+      { query: normalizedTradingAccountId, page: 0, size: 200 },
+      { query: normalizedTradingAccountId, size: 200 },
+      { query: normalizedTradingAccountId },
+      { login: normalizedTradingAccountId, page: 0, size: 200 },
+      { login: normalizedTradingAccountId }
+    ]
+
+    const userEmail = this.pickFirstString([options.userEmail])
+    if (userEmail) {
+      fallbackQueries.unshift(
+        { query: userEmail, page: 0, size: 200 },
+        { query: userEmail, size: 200 },
+        { query: userEmail }
+      )
+    }
+
+    for (const query of fallbackQueries) {
+      try {
+        const payload = await this.client.get('/v1/trading-accounts', query)
+        const matched = this.parseCollection(payload).find((item) =>
+          String(this.findTradingAccountId(item) || '') === normalizedTradingAccountId
+        )
+        if (matched) {
+          return matched
+        }
+      } catch (error) {
+        lastError = error
+      }
+    }
+
     throw lastError
   }
 
@@ -1000,18 +1096,30 @@ class MatchTraderService {
     }
 
     const local = await this.listLocalTradingAccountsByUser(userId)
+    const providerAccountMap = new Map()
+    try {
+      const providerAccounts = await this.listProviderTradingAccountsByEmail(user.email)
+      providerAccounts.forEach((providerAccount) => {
+        const providerTradingAccountId = this.findTradingAccountId(providerAccount)
+        if (!providerTradingAccountId) return
+        providerAccountMap.set(String(providerTradingAccountId), providerAccount)
+      })
+    } catch (error) {
+      // We can still continue by querying accounts individually.
+    }
 
     const accounts = await Promise.all(local.map(async (item) => {
       try {
-        const provider = await this.getTradingAccountDetailsFromProvider(item.id)
+        const provider = providerAccountMap.get(String(item.id)) ||
+          await this.getTradingAccountDetailsFromProvider(item.id, { userEmail: user.email })
         return {
           trading_account_id: item.id,
           mode: item.mode,
-          status: provider.status || item.status,
-          leverage: provider.leverage || item.leverage,
-          currency: provider.currency || item.currency,
-          balance: this.toSafeNumber(provider.balance),
-          equity: this.toSafeNumber(provider.equity),
+          status: this.extractTradingStatus(provider) || item.status,
+          leverage: this.extractTradingLeverage(provider) || item.leverage,
+          currency: this.extractTradingCurrency(provider) || item.currency,
+          balance: this.toSafeNumberOrDefault(this.extractTradingBalance(provider), 0),
+          equity: this.toSafeNumberOrDefault(this.extractTradingEquity(provider), 0),
           provider
         }
       } catch (error) {
@@ -1021,8 +1129,8 @@ class MatchTraderService {
           status: item.status,
           leverage: item.leverage,
           currency: item.currency,
-          balance: null,
-          equity: null,
+          balance: 0,
+          equity: 0,
           provider_error: error.message
         }
       }
@@ -1053,7 +1161,9 @@ class MatchTraderService {
 
     let tradingAccountDetails = null
     try {
-      tradingAccountDetails = await this.getTradingAccountDetailsFromProvider(tradingAccountId)
+      tradingAccountDetails = await this.getTradingAccountDetailsFromProvider(tradingAccountId, {
+        userEmail: user.email
+      })
     } catch (error) {
       tradingAccountDetails = null
     }
@@ -1434,7 +1544,9 @@ class MatchTraderService {
       let history = []
 
       try {
-        providerDetails = await this.getTradingAccountDetailsFromProvider(account.id)
+        providerDetails = await this.getTradingAccountDetailsFromProvider(account.id, {
+          userEmail: user.email || ''
+        })
       } catch (error) {
         providerDetails = { provider_error: error.message }
       }
@@ -1450,11 +1562,11 @@ class MatchTraderService {
       return {
         trading_account_id: account.id,
         mode: account.mode,
-        status: providerDetails.status || account.status,
-        currency: providerDetails.currency || account.currency,
-        leverage: providerDetails.leverage || account.leverage,
-        balance: this.toSafeNumber(providerDetails.balance),
-        equity: this.toSafeNumber(providerDetails.equity),
+        status: this.extractTradingStatus(providerDetails) || account.status,
+        currency: this.extractTradingCurrency(providerDetails) || account.currency,
+        leverage: this.extractTradingLeverage(providerDetails) || account.leverage,
+        balance: this.toSafeNumberOrDefault(this.extractTradingBalance(providerDetails), 0),
+        equity: this.toSafeNumberOrDefault(this.extractTradingEquity(providerDetails), 0),
         history
       }
     }))
