@@ -6,6 +6,7 @@ const QRCode = require('qrcode')
 const { v4: uuidv4 } = require('uuid')
 const db = require('../config/db')
 const emailService = require('./email.service')
+const matchTraderService = require('./matchtrader.service')
 const { validatePasswordPolicy } = require('../utils/password-policy')
 
 class SettingsService {
@@ -289,13 +290,30 @@ class SettingsService {
     const match = await bcrypt.compare(currentPassword, rows[0].password_hash || '')
     if (!match) throw new Error('Current password is incorrect')
 
+    const matchTraderSync = await matchTraderService.syncPortalPasswordForUser(
+      userId,
+      newPassword,
+      {
+        currentPassword,
+        createIfMissing: true
+      }
+    )
+
     const newHash = await bcrypt.hash(newPassword, 10)
     await db.promise().query(
       `UPDATE users SET password_hash = ? WHERE id = ?`,
       [newHash, userId]
     )
 
-    return { success: true, message: 'Password changed successfully' }
+    return {
+      success: true,
+      message: 'Password changed successfully',
+      matchTraderSync: {
+        synced: true,
+        source: matchTraderSync.source || 'existing',
+        account_uuid: matchTraderSync.account_uuid || null
+      }
+    }
   }
 
   async generate2FA(userId, email) {

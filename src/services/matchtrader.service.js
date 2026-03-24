@@ -206,8 +206,17 @@ class MatchTraderService {
       payload.systemUuid,
       payload.systemUUID,
       payload.systemId,
+      payload.serverUuid,
+      payload.serverUUID,
+      payload.tradingSystemUuid,
+      payload.tradingSystemUUID,
+      payload.system && payload.system.id,
       payload.system && payload.system.uuid,
-      payload.system && payload.systemUuid
+      payload.system && payload.systemUuid,
+      payload.accountInfo && payload.accountInfo.systemUuid,
+      payload.accountInfo && payload.accountInfo.systemUUID,
+      payload.accountInfo && payload.accountInfo.serverUuid,
+      payload.accountInfo && payload.accountInfo.serverUUID
     ])
   }
 
@@ -636,12 +645,133 @@ class MatchTraderService {
     }
   }
 
+  async syncPortalPasswordForUser(userOrId, password, options = {}) {
+    const normalizedPassword = String(password || '').trim()
+    if (!normalizedPassword) {
+      throw new MatchTraderApiError('password is required for Match-Trader sync', {
+        statusCode: 400,
+        code: 'VALIDATION_ERROR'
+      })
+    }
+
+    const user = (userOrId && typeof userOrId === 'object')
+      ? userOrId
+      : await this.getUserById(userOrId)
+
+    const email = this.pickFirstString([user && user.email]).toLowerCase()
+    if (!email) {
+      throw new MatchTraderApiError('User email is required for Match-Trader sync', {
+        statusCode: 422,
+        code: 'BROKER_ACCOUNT_RESOLUTION_FAILED'
+      })
+    }
+
+    const currentPassword = this.pickFirstString([
+      options.currentPassword,
+      options.current_password,
+      options.oldPassword,
+      options.old_password
+    ])
+    const createIfMissing = options.createIfMissing !== false
+    const allowUnauthorizedFallbackCreate = options.allowUnauthorizedFallbackCreate !== false
+
+    const byEmail = await this.findBrokerAccountByEmail(email)
+    if (!byEmail) {
+      if (!createIfMissing) {
+        return {
+          synced: false,
+          skipped: true,
+          reason: 'BROKER_ACCOUNT_NOT_FOUND'
+        }
+      }
+
+      const created = await this.createBrokerAccountForUser(user, normalizedPassword)
+      const createdAccount = created.account || {}
+      const accountUuid = this.pickFirstString([
+        createdAccount.uuid,
+        createdAccount.accountUuid,
+        createdAccount.id
+      ])
+
+      if (!accountUuid) {
+        throw new MatchTraderApiError('Provider did not return broker account uuid', {
+          statusCode: 502,
+          code: 'PROVIDER_INVALID_RESPONSE',
+          providerError: createdAccount
+        })
+      }
+
+      return {
+        synced: true,
+        source: 'created',
+        changed: true,
+        account_uuid: accountUuid,
+        provider: createdAccount
+      }
+    }
+
+    const accountUuid = this.pickFirstString([byEmail.uuid, byEmail.accountUuid, byEmail.id])
+    if (!accountUuid) {
+      throw new MatchTraderApiError('Unable to resolve Match-Trader account UUID for password sync', {
+        statusCode: 422,
+        code: 'BROKER_ACCOUNT_RESOLUTION_FAILED',
+        providerError: byEmail
+      })
+    }
+
+    const plans = this.buildAccountPasswordChangePlans(accountUuid, normalizedPassword, currentPassword)
+    try {
+      const provider = await this.executePasswordChangePlans(plans)
+      return {
+        synced: true,
+        source: 'existing',
+        changed: true,
+        account_uuid: accountUuid,
+        provider
+      }
+    } catch (error) {
+      if (
+        createIfMissing &&
+        allowUnauthorizedFallbackCreate &&
+        error instanceof MatchTraderApiError &&
+        Number(error.statusCode) === 401
+      ) {
+        try {
+          const created = await this.createBrokerAccountForUser(user, normalizedPassword)
+          const createdAccount = created.account || {}
+          const freshAccountUuid = this.pickFirstString([
+            createdAccount.uuid,
+            createdAccount.accountUuid,
+            createdAccount.id
+          ])
+          if (freshAccountUuid) {
+            return {
+              synced: true,
+              source: 'created_fallback',
+              changed: true,
+              account_uuid: freshAccountUuid,
+              provider: createdAccount
+            }
+          }
+        } catch (fallbackError) {
+          // preserve original provider authorization error when fallback creation is blocked
+        }
+      }
+
+      throw error
+    }
+  }
+
   extractProviderTradingAccountEmail(providerAccount = {}) {
     return this.pickFirstString([
       providerAccount.email,
       providerAccount.accountInfo && providerAccount.accountInfo.email,
       providerAccount.account && providerAccount.account.email
     ])
+  }
+
+  extractProviderTradingAccountSystemUuid(providerAccount = {}) {
+    return this.extractSystemUuid(providerAccount)
   }
 
   mapProviderTradingAccount(providerAccount = {}) {
@@ -677,22 +807,107 @@ class MatchTraderService {
         providerAccount.access,
         providerAccount.state
       ]) || 'ACTIVE',
-      email: this.extractProviderTradingAccountEmail(providerAccount)
+      email: this.extractProviderTradingAccountEmail(providerAccount),
+      systemUuid: this.extractProviderTradingAccountSystemUuid(providerAccount)
     }
+  }
+
+  mergeProviderTradingAccounts(collections = []) {
+    const output = []
+    const seen = new Set()
+
+    collections.forEach((items) => {
+      ;(items || []).forEach((item) => {
+        const key = this.pickFirstString([
+          this.findTradingAccountId(item),
+          item && item.uuid,
+          item && item.id,
+          item && item.accountUuid
+        ]) || JSON.stringify(item || {})
+
+        if (seen.has(key)) return
+        seen.add(key)
+        output.push(item)
+      })
+    })
+
+    return output
+  }
+
+  async listProviderTradingAccounts(searchTerm) {
+    const normalizedSearch = String(searchTerm || '').trim()
+    if (!normalizedSearch) return []
+
+    const payload = await this.fetchWithPayloadVariants('/v1/trading-accounts', 'GET', [
+      { query: normalizedSearch, page: 0, size: 200 },
+      { query: normalizedSearch, size: 200 },
+      { query: normalizedSearch },
+      { email: normalizedSearch, page: 0, size: 200 },
+      { email: normalizedSearch },
+      { login: normalizedSearch, page: 0, size: 200 },
+      { login: normalizedSearch }
+    ])
+    return this.parseCollection(payload)
+  }
+
+  async listProviderTradingAccountsByBrokerAccountUuid(brokerAccountUuid) {
+    const normalizedUuid = String(brokerAccountUuid || '').trim()
+    if (!normalizedUuid) return []
+
+    const collections = []
+    try {
+      const payload = await this.fetchWithPayloadVariants('/v1/trading-accounts', 'GET', [
+        { query: normalizedUuid, page: 0, size: 200 },
+        { query: normalizedUuid, size: 200 },
+        { query: normalizedUuid },
+        { accountUuid: normalizedUuid, page: 0, size: 200 },
+        { accountUuid: normalizedUuid },
+        { brokerAccountUuid: normalizedUuid, page: 0, size: 200 },
+        { brokerAccountUuid: normalizedUuid }
+      ])
+      collections.push(this.parseCollection(payload))
+    } catch (error) {
+      // continue to path fallback
+    }
+
+    try {
+      const payload = await this.client.get(
+        `/v1/accounts/${encodeURIComponent(normalizedUuid)}/trading-accounts`
+      )
+      collections.push(this.parseCollection(payload))
+    } catch (error) {
+      // keep search-result fallback even if account-scoped path is disabled
+    }
+
+    return this.mergeProviderTradingAccounts(collections)
   }
 
   async listProviderTradingAccountsByEmail(email) {
     const normalizedEmail = String(email || '').trim()
     if (!normalizedEmail) return []
 
-    const payload = await this.fetchWithPayloadVariants('/v1/trading-accounts', 'GET', [
-      { query: normalizedEmail, page: 0, size: 200 },
-      { query: normalizedEmail, size: 200 },
-      { query: normalizedEmail },
-      { email: normalizedEmail, page: 0, size: 200 },
-      { email: normalizedEmail }
-    ])
-    return this.parseCollection(payload)
+    const collections = []
+    try {
+      collections.push(await this.listProviderTradingAccounts(normalizedEmail))
+    } catch (error) {
+      // continue with broker-account scoped fallback
+    }
+
+    try {
+      const brokerAccount = await this.findBrokerAccountByEmail(normalizedEmail)
+      const brokerUuid = this.pickFirstString([
+        brokerAccount && brokerAccount.uuid,
+        brokerAccount && brokerAccount.accountUuid,
+        brokerAccount && brokerAccount.id
+      ])
+      if (brokerUuid) {
+        collections.push(await this.listProviderTradingAccountsByBrokerAccountUuid(brokerUuid))
+      }
+    } catch (error) {
+      // keep previous search results if broker-account lookup fails
+    }
+
+    return this.mergeProviderTradingAccounts(collections)
   }
 
   async syncLocalTradingAccountsForUser(userId, user = null) {
@@ -884,6 +1099,24 @@ class MatchTraderService {
       }
     }
 
+    const shouldRetryWithFreshBrokerAccount = (attemptResult) => {
+      if (!attemptResult || brokerAccount.source !== 'existing') return false
+      if (attemptResult.created) return false
+
+      if (
+        attemptResult.requestError instanceof MatchTraderApiError &&
+        [401, 403].includes(Number(attemptResult.requestError.statusCode))
+      ) {
+        return true
+      }
+
+      const providerStatus = String(
+        attemptResult.providerPayload && attemptResult.providerPayload.status
+      ).toUpperCase()
+
+      return ['FAILED', 'REJECTED', 'DENIED'].includes(providerStatus)
+    }
+
     let brokerAccountUuidUsed = brokerAccount.uuid
     let knownPassword = ''
     let providerPasswordReturned = false
@@ -897,12 +1130,7 @@ class MatchTraderService {
 
     // In sandbox/shared environments, existing account UUID may not be writable for current token.
     // Retry once with a freshly created broker account owned by this integration.
-    if (
-      !attempt.created &&
-      attempt.requestError instanceof MatchTraderApiError &&
-      Number(attempt.requestError.statusCode) === 401 &&
-      brokerAccount.source === 'existing'
-    ) {
+    if (shouldRetryWithFreshBrokerAccount(attempt)) {
       const preferredCreationPassword = this.pickFirstString([
         body.broker_password,
         body.brokerPassword
@@ -1053,27 +1281,14 @@ class MatchTraderService {
       }
     }
 
-    const fallbackQueries = [
-      { query: normalizedTradingAccountId, page: 0, size: 200 },
-      { query: normalizedTradingAccountId, size: 200 },
-      { query: normalizedTradingAccountId },
-      { login: normalizedTradingAccountId, page: 0, size: 200 },
-      { login: normalizedTradingAccountId }
-    ]
-
     const userEmail = this.pickFirstString([options.userEmail])
-    if (userEmail) {
-      fallbackQueries.unshift(
-        { query: userEmail, page: 0, size: 200 },
-        { query: userEmail, size: 200 },
-        { query: userEmail }
-      )
-    }
+    const searchTerms = [normalizedTradingAccountId]
+    if (userEmail) searchTerms.push(userEmail)
 
-    for (const query of fallbackQueries) {
+    for (const searchTerm of searchTerms) {
       try {
-        const payload = await this.client.get('/v1/trading-accounts', query)
-        const matched = this.parseCollection(payload).find((item) =>
+        const providerAccounts = await this.listProviderTradingAccounts(searchTerm)
+        const matched = providerAccounts.find((item) =>
           String(this.findTradingAccountId(item) || '') === normalizedTradingAccountId
         )
         if (matched) {
@@ -1084,7 +1299,25 @@ class MatchTraderService {
       }
     }
 
-    throw lastError
+    if (userEmail) {
+      try {
+        const providerAccountsByEmail = await this.listProviderTradingAccountsByEmail(userEmail)
+        const matchedByEmail = providerAccountsByEmail.find((item) =>
+          String(this.findTradingAccountId(item) || '') === normalizedTradingAccountId
+        )
+        if (matchedByEmail) {
+          return matchedByEmail
+        }
+      } catch (error) {
+        lastError = error
+      }
+    }
+
+    if (lastError) throw lastError
+    throw new MatchTraderApiError('Trading account details could not be resolved from provider', {
+      statusCode: 404,
+      code: 'TRADING_ACCOUNT_PROVIDER_NOT_FOUND'
+    })
   }
 
   async listCustomerTradingAccounts(userId) {
@@ -1212,12 +1445,53 @@ class MatchTraderService {
     })
   }
 
-  classifyPendingOrders(activeOrders) {
-    const pendingKeywords = ['pending', 'limit', 'stop']
-    return activeOrders.filter((order) => {
-      const blob = JSON.stringify(order).toLowerCase()
-      return pendingKeywords.some((item) => blob.includes(item))
-    })
+  isSystemUuidMissingError(error) {
+    if (!(error instanceof MatchTraderApiError)) return false
+    const messageBlob = JSON.stringify({
+      message: error.message,
+      details: error.providerError || null
+    }).toLowerCase()
+    return messageBlob.includes('systemuuid') && messageBlob.includes('required')
+  }
+
+  buildTradingDataByIdsPayloadVariants(tradingAccountId, filters = {}, systemUuid = '') {
+    const baseBody = {
+      ...(filters.from ? { from: filters.from } : {}),
+      ...(filters.to ? { to: filters.to } : {}),
+      ...(systemUuid ? { systemUuid } : {})
+    }
+    return [
+      { ...baseBody, logins: [tradingAccountId] },
+      { ...baseBody, loginList: [tradingAccountId] },
+      { ...baseBody, tradingAccountLogins: [tradingAccountId] },
+      { ...baseBody, accountLogins: [tradingAccountId] },
+      { ...baseBody, ids: [tradingAccountId] }
+    ]
+  }
+
+  async fetchTradingDataCollection({
+    primaryPath,
+    fallbackByIdsPath = '',
+    tradingAccountId,
+    filters = {},
+    queryVariants = [],
+    systemUuid = ''
+  }) {
+    try {
+      const payload = await this.fetchWithPayloadVariants(primaryPath, 'GET', queryVariants)
+      return this.parseCollection(payload)
+    } catch (error) {
+      if (!fallbackByIdsPath || !this.isSystemUuidMissingError(error)) {
+        throw error
+      }
+
+      const payload = await this.fetchWithPayloadVariants(
+        fallbackByIdsPath,
+        'POST',
+        this.buildTradingDataByIdsPayloadVariants(tradingAccountId, filters, systemUuid)
+      )
+      return this.parseCollection(payload)
+    }
   }
 
   normalizeOrderHistoryStatuses(filters = {}) {
@@ -1282,15 +1556,18 @@ class MatchTraderService {
     ])
     if (explicitSystemUuid) return explicitSystemUuid
 
+    const userEmail = this.pickFirstString([options.userEmail, filters.user_email, filters.userEmail])
+
     try {
-      const details = await this.getTradingAccountDetailsFromProvider(tradingAccountId)
+      const details = await this.getTradingAccountDetailsFromProvider(tradingAccountId, {
+        userEmail
+      })
       const fromDetails = this.extractSystemUuid(details || {})
       if (fromDetails) return fromDetails
     } catch (error) {
       // fall through
     }
 
-    const userEmail = this.pickFirstString([options.userEmail, filters.user_email, filters.userEmail])
     if (userEmail) {
       try {
         const providerAccounts = await this.listProviderTradingAccountsByEmail(userEmail)
@@ -1302,6 +1579,17 @@ class MatchTraderService {
       } catch (error) {
         // fall through
       }
+    }
+
+    try {
+      const providerAccounts = await this.listProviderTradingAccounts(String(tradingAccountId || ''))
+      const matched = providerAccounts.find(
+        (item) => String(this.findTradingAccountId(item) || '') === String(tradingAccountId)
+      )
+      const fromSearch = this.extractSystemUuid(matched || {})
+      if (fromSearch) return fromSearch
+    } catch (error) {
+      // fall through
     }
 
     return ''
@@ -1319,20 +1607,34 @@ class MatchTraderService {
       systemUuid
     )
 
-    const activeOrders = await this.fetchWithPayloadVariants(
-      '/v1/trading-accounts/trading-data/active-orders',
-      'GET',
-      queryVariants
-    )
+    const [pending, openPositions, closedBase] = await Promise.all([
+      this.fetchTradingDataCollection({
+        primaryPath: '/v1/trading-accounts/trading-data/active-orders',
+        fallbackByIdsPath: '/v1/trading-accounts/trading-data/active-orders-by-ids',
+        tradingAccountId,
+        filters: baseFilters,
+        queryVariants,
+        systemUuid
+      }),
+      this.fetchTradingDataCollection({
+        primaryPath: '/v1/trading-accounts/trading-data/open-positions',
+        fallbackByIdsPath: '/v1/trading-accounts/trading-data/open-positions-by-ids',
+        tradingAccountId,
+        filters: baseFilters,
+        queryVariants,
+        systemUuid
+      }),
+      this.fetchTradingDataCollection({
+        primaryPath: '/v1/trading-accounts/trading-data/closed-positions',
+        fallbackByIdsPath: '/v1/trading-accounts/trading-data/closed-positions-by-ids',
+        tradingAccountId,
+        filters: baseFilters,
+        queryVariants,
+        systemUuid
+      })
+    ])
 
-    const closedOrders = await this.fetchWithPayloadVariants(
-      '/v1/trading-accounts/trading-data/closed-positions',
-      'GET',
-      queryVariants
-    )
-
-    const active = this.parseCollection(activeOrders)
-    let closed = this.parseCollection(closedOrders)
+    let closed = closedBase
     const includeHistoryFallback = String(
       filters.include_history !== undefined ? filters.include_history : (filters.includeHistory || '')
     ).toLowerCase()
@@ -1361,11 +1663,12 @@ class MatchTraderService {
       }
     }
 
-    const pending = this.classifyPendingOrders(active)
+    const active = openPositions
 
     return {
       active_orders: active,
-      pending_orders: pending.length ? pending : active,
+      open_positions: openPositions,
+      pending_orders: pending,
       closed_orders: closed
     }
   }
@@ -1388,6 +1691,27 @@ class MatchTraderService {
     return {
       trading_account_id: tradingAccountId,
       ...orders
+    }
+  }
+
+  async getCustomerOpenPositions(userId, query = {}) {
+    const tradingAccountId = String(query.trading_account_id || '').trim()
+    if (!tradingAccountId) {
+      throw new MatchTraderApiError('trading_account_id query param is required', {
+        statusCode: 400,
+        code: 'VALIDATION_ERROR'
+      })
+    }
+
+    await this.getLocalTradingAccountForUser(userId, tradingAccountId)
+    const user = await this.getUserById(userId)
+    const orders = await this.fetchOrdersByLogin(tradingAccountId, query, {
+      userEmail: user.email
+    })
+
+    return {
+      trading_account_id: tradingAccountId,
+      open_positions: orders.open_positions || orders.active_orders || []
     }
   }
 
@@ -1438,10 +1762,13 @@ class MatchTraderService {
       const fallbackOrders = await this.fetchOrdersByLogin(tradingAccountId, query, {
         userEmail: user.email
       })
-      orderHistory = [
-        ...fallbackOrders.closed_orders,
-        ...fallbackOrders.active_orders
-      ]
+      orderHistory = this.mergeOrderCollections(
+        fallbackOrders.closed_orders,
+        [
+          ...(fallbackOrders.pending_orders || []),
+          ...(fallbackOrders.open_positions || fallbackOrders.active_orders || [])
+        ]
+      )
     }
 
     return {
@@ -1480,6 +1807,7 @@ class MatchTraderService {
           account,
           orders: {
             active_orders: [],
+            open_positions: [],
             pending_orders: [],
             closed_orders: []
           }
@@ -1488,6 +1816,7 @@ class MatchTraderService {
     }, 4)
 
     const active = []
+    const openPositions = []
     const pending = []
     const closed = []
 
@@ -1497,17 +1826,22 @@ class MatchTraderService {
         account_mode: row.account.mode
       }
       row.orders.active_orders.forEach((order) => active.push({ ...meta, order }))
+      ;(row.orders.open_positions || row.orders.active_orders || []).forEach((order) => {
+        openPositions.push({ ...meta, order })
+      })
       row.orders.pending_orders.forEach((order) => pending.push({ ...meta, order }))
       row.orders.closed_orders.forEach((order) => closed.push({ ...meta, order }))
     })
 
     return {
       active_orders: active,
+      open_positions: openPositions,
       pending_orders: pending,
       closed_orders: closed,
       summary: {
         trading_accounts_count: accounts.length,
         active_count: active.length,
+        open_positions_count: openPositions.length,
         pending_count: pending.length,
         closed_count: closed.length
       },
@@ -1631,6 +1965,7 @@ class MatchTraderService {
           account,
           orders: {
             active_orders: [],
+            open_positions: [],
             pending_orders: [],
             closed_orders: []
           },
@@ -1640,6 +1975,7 @@ class MatchTraderService {
     }, 4)
 
     const active = []
+    const openPositions = []
     const pending = []
     const closed = []
 
@@ -1650,16 +1986,21 @@ class MatchTraderService {
         email: row.account.email
       }
       row.orders.active_orders.forEach((item) => active.push({ ...accountMeta, order: item }))
+      ;(row.orders.open_positions || row.orders.active_orders || []).forEach((item) => {
+        openPositions.push({ ...accountMeta, order: item })
+      })
       row.orders.pending_orders.forEach((item) => pending.push({ ...accountMeta, order: item }))
       row.orders.closed_orders.forEach((item) => closed.push({ ...accountMeta, order: item }))
     }
 
     return {
       active_orders: active,
+      open_positions: openPositions,
       pending_orders: pending,
       closed_orders: closed,
       summary: {
         active_count: active.length,
+        open_positions_count: openPositions.length,
         pending_count: pending.length,
         closed_count: closed.length
       }

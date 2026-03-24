@@ -275,7 +275,11 @@ exports.completeProfile = async (req, res) => {
     res.status(200).json(result)
   } catch (error) {
     res = addCorsHeaders(res, req);
-    res.status(400).json({ error: error.message })
+    const statusCode = Number(error.statusCode)
+    const resolvedStatus = Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 600
+      ? statusCode
+      : 400
+    res.status(resolvedStatus).json({ error: error.message })
   }
 }
 

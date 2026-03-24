@@ -6,6 +6,7 @@ const speakeasy = require('speakeasy')
 const { v4: uuidv4 } = require('uuid')
 const emailService = require('./email.service')
 const currencyService = require('./currency.service')
+const matchTraderService = require('./matchtrader.service')
 const { getNextUserId } = require('../utils/id-generator')
 
 function normalizeAccountType(value) {
@@ -41,6 +42,42 @@ function createPending2FAToken(user) {
     process.env.JWT_SECRET,
     { expiresIn: '10m' }
   )
+}
+
+async function syncMatchTraderPasswordBestEffort(user, password, context = 'auth') {
+  const normalizedPassword = String(password || '').trim()
+  if (!user || !user.email || !normalizedPassword) {
+    return { synced: false, skipped: true, reason: 'MISSING_USER_OR_PASSWORD' }
+  }
+
+  try {
+    const syncResult = await matchTraderService.syncPortalPasswordForUser(
+      {
+        id: user.id,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name
+      },
+      normalizedPassword,
+      {
+        createIfMissing: true
+      }
+    )
+
+    return {
+      synced: true,
+      source: syncResult.source || 'existing',
+      account_uuid: syncResult.account_uuid || null
+    }
+  } catch (error) {
+    console.warn(
+      `[MatchTrader][auth-password-sync-warning] context=${context} user=${user.id || 'unknown'} message=${error.message}`
+    )
+    return {
+      synced: false,
+      error: error.message
+    }
+  }
 }
 
 async function createUserSessionToken(user, ipAddress = null, userAgent = null) {
@@ -199,6 +236,11 @@ exports.login = async (data) => {
         ...user,
         auth_version: Number(user.auth_version || 1)
       }
+      const matchTraderSync = await syncMatchTraderPasswordBestEffort(
+        normalizedUser,
+        password,
+        'login'
+      )
       const token = await createUserSessionToken(normalizedUser, ipAddress, userAgent)
 
       resolve({
@@ -215,7 +257,8 @@ exports.login = async (data) => {
           registrationCurrencyCode: user.registration_currency_code,
           is2FAEnabled: user.is_2fa_enabled,
           profileCompleted: user.profile_completed
-        }
+        },
+        matchTraderSync
       })
     })
   })
@@ -620,33 +663,56 @@ exports.getRegistrationCountries = async () => {
 
 exports.completeProfile = async (userId, data) => {
   const { firstName, lastName, password } = data
-  return new Promise((resolve, reject) => {
-    db.query(
-      `SELECT * FROM users WHERE id = ? AND provider = 'google' AND password_set = false`,
-      [userId],
-      async (err, results) => {
-        if (err || results.length === 0) {
-          return reject(new Error('User not found or password already set'))
-        }
+  const [rows] = await db.promise().query(
+    `SELECT id, email, first_name, last_name
+     FROM users
+     WHERE id = ? AND provider = 'google' AND password_set = false
+     LIMIT 1`,
+    [userId]
+  )
 
-        const hash = await bcrypt.hash(password, 10)
-        db.query(
-          `UPDATE users SET
-            first_name = ?,
-            last_name = ?,
-            password_hash = ?,
-            password_set = true,
-            profile_completed = true
-           WHERE id = ?`,
-          [firstName, lastName, hash, userId],
-          (updateErr) => {
-            if (updateErr) return reject(updateErr)
-            resolve({ success: true, message: 'Profile completed successfully' })
-          }
-        )
-      }
-    )
-  })
+  if (rows.length === 0) {
+    throw new Error('User not found or password already set')
+  }
+
+  const user = rows[0]
+  const targetFirstName = String(firstName || user.first_name || '').trim() || 'User'
+  const targetLastName = String(lastName || user.last_name || '').trim() || 'Trader'
+
+  const matchTraderSync = await matchTraderService.syncPortalPasswordForUser(
+    {
+      id: user.id,
+      email: user.email,
+      first_name: targetFirstName,
+      last_name: targetLastName
+    },
+    password,
+    {
+      createIfMissing: true
+    }
+  )
+
+  const hash = await bcrypt.hash(password, 10)
+  await db.promise().query(
+    `UPDATE users SET
+      first_name = ?,
+      last_name = ?,
+      password_hash = ?,
+      password_set = true,
+      profile_completed = true
+     WHERE id = ?`,
+    [targetFirstName, targetLastName, hash, userId]
+  )
+
+  return {
+    success: true,
+    message: 'Profile completed successfully',
+    matchTraderSync: {
+      synced: true,
+      source: matchTraderSync.source || 'existing',
+      account_uuid: matchTraderSync.account_uuid || null
+    }
+  }
 }
 
 module.exports = {

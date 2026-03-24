@@ -73,6 +73,15 @@ exports.getCustomerOrders = async (req, res) => {
   }
 }
 
+exports.getCustomerOpenPositions = async (req, res) => {
+  try {
+    const data = await matchTraderService.getCustomerOpenPositions(req.user.id, req.query || {})
+    return sendSuccess(res, data)
+  } catch (error) {
+    return sendError(res, error)
+  }
+}
+
 exports.getCustomerAllOrders = async (req, res) => {
   try {
     const data = await matchTraderService.getCustomerAllOrders(req.user.id, req.query || {})

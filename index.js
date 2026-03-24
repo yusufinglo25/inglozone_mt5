@@ -49,10 +49,10 @@ const migrate = require('./src/config/migrate')
 const runAdminMigrations = require('./src/config/admin.migrate')
 const runSettingsMigrations = require('./src/config/settings.migrate')
 const startPaymentReminderJob = require('./src/jobs/payment-reminder')
+const passport = require('./src/config/google')
 migrate()
 runAdminMigrations()
 runSettingsMigrations()
-// const passport = require('passport') // Comment out for now
 
 // Start cleanup job (comment out in development if needed)
 if (process.env.NODE_ENV === 'production') {
@@ -75,7 +75,7 @@ app.get('/api-docs-json', (req, res) => {
 app.get('/api-documentation.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'src/docs/api-documentation.html'))
 })
-// app.use(passport.initialize()) // Comment out for now
+app.use(passport.initialize())
 
 // 1. Global CORS headers middleware
 app.use((req, res, next) => {

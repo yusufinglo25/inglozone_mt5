@@ -1,0 +1,1247 @@
+{
+  "count": 69,
+  "results": [
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/introduction/crm-integration",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/introduction/crm-integration/architecture",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/introduction/crm-integration/step-by-step",
+      "method": "GET",
+      "path": "service-info",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/introduction/crm-integration/conformance",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/introduction/crm-integration/financial-stream",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/grpc/ledgers",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/grpc/ledgers/ledgers-by-login",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/grpc/ledgers/ledgers-by-groups-or-logins",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/grpc/groups",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/grpc/trading-events",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/grpc/orders",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/grpc/quotations",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/grpc/account-info",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/grpc/symbols",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/grpc/positions",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/grpc/positions/positions-by-groups-or-logins",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/grpc/positions/positions-by-login",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/grpc/equity",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/branches-offers-roles/get-offers",
+      "method": "GET",
+      "path": "v1/offers",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/accounts",
+      "method": "GET",
+      "path": "v1/accounts",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/email",
+      "method": "GET",
+      "path": "v1/accounts/by-email/{email}",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/uuid",
+      "method": "GET",
+      "path": "v1/accounts/by-uuid/{accountUuid}",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/timeline-events",
+      "method": "GET",
+      "path": "v1/accounts/{accountUuid}/timeline-events",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/managers-list",
+      "method": "POST",
+      "path": "v1/accounts/account-managers",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/create",
+      "method": "POST",
+      "path": "v1/accounts",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/update",
+      "method": "PATCH",
+      "path": "v1/accounts/{accountUuid}",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/change-password",
+      "method": "POST",
+      "path": "v1/change-password",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/bulk-delete",
+      "method": "POST",
+      "path": "v1/accounts/bulk-delete",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/add-note",
+      "method": "POST",
+      "path": "v1/note",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/add-task",
+      "method": "POST",
+      "path": "v1/task",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/send-inbox-message",
+      "method": "POST",
+      "path": "v1/user-notifications",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/lead-statuses",
+      "method": "POST",
+      "path": "v1/lead-statuses",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/trading-accounts",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/trading-accounts/trading-accounts",
+      "method": "GET",
+      "path": "v1/trading-accounts",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/trading-accounts/logins",
+      "method": "GET",
+      "path": "v1/trading-account",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/trading-accounts/create",
+      "method": "POST",
+      "path": "v1/accounts/{accountUuid}/trading-accounts",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/trading-accounts/updates",
+      "method": "PATCH",
+      "path": "v1/trading-account",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/trading-accounts/change-leverage",
+      "method": "PUT",
+      "path": "v1/trading-account/leverage",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/trading-accounts/bulk-delete",
+      "method": "POST",
+      "path": "v1/trading-accounts/bulk-delete",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/accounts/trading-accounts/retrieve-trading-accounts",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/symbols",
+      "method": "GET",
+      "path": "v1/symbols",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/open-position",
+      "method": "POST",
+      "path": "v1/trading-accounts/positions/open",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/create-pending-order",
+      "method": "POST",
+      "path": "v1/trading-accounts/pending-order/create",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/cancel-pending-order",
+      "method": "DELETE",
+      "path": "v1/trading-accounts/pending-order/cancel",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/create-correction-order",
+      "method": "POST",
+      "path": "v1/trading-accounts/correction-order/create",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/edit-position",
+      "method": "POST",
+      "path": "v1/trading-accounts/positions/edit",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/close-position",
+      "method": "POST",
+      "path": "v1/trading-accounts/positions/close",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/close-position-partially",
+      "method": "POST",
+      "path": "v1/trading-accounts/positions/close-partially",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/close-all-positions",
+      "method": "POST",
+      "path": "v1/trading-accounts/positions/close-all",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/reopen-position",
+      "method": "POST",
+      "path": "v1/trading-accounts/positions/reopen",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/open-positions",
+      "method": "GET",
+      "path": "v1/trading-accounts/trading-data/open-positions",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/closed-positions",
+      "method": "GET",
+      "path": "v1/trading-accounts/trading-data/closed-positions",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/active-orders",
+      "method": "GET",
+      "path": "v1/trading-accounts/trading-data/active-orders",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/ledgers",
+      "method": "GET",
+      "path": "v1/trading-accounts/trading-data/ledgers",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/groups",
+      "method": "POST",
+      "path": "v1/groups",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/group-names",
+      "method": "GET",
+      "path": "v1/group-names",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/orders-by-logins-or-groups",
+      "method": "POST",
+      "path": "v1/trading-accounts/trading-data/order-history",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/ledgers-by-logins-or-groups",
+      "method": "POST",
+      "path": "v1/trading-accounts/trading-data/ledgers",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/open-positions-by-logins-or-groups",
+      "method": "POST",
+      "path": "v1/trading-accounts/trading-data/open-positions",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/closed-positions-by-logins-or-groups",
+      "method": "POST",
+      "path": "v1/trading-accounts/trading-data/closed-positions",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/orders-by-ids",
+      "method": "POST",
+      "path": "v1/trading-accounts/trading-data/order-history-by-ids",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/closed-positions-by-id",
+      "method": "POST",
+      "path": "v1/trading-accounts/trading-data/closed-positions-by-ids",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/open-positions-by-id",
+      "method": "POST",
+      "path": "v1/trading-accounts/trading-data/open-positions-by-ids",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/active-orders-by-id",
+      "method": "POST",
+      "path": "v1/trading-accounts/trading-data/active-orders-by-ids",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/platform-logs-v2",
+      "method": "POST",
+      "path": "v2/platform-logs",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/retrieve-balance-snapshots",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/candles",
+      "method": null,
+      "path": null,
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    },
+    {
+      "url": "https://app.theneo.io/match-trade/broker-api/trading/trading-data/candles/candles",
+      "method": "GET",
+      "path": "/v1/candles",
+      "baseUrl": "https://grpc-broker-api-demo.match-trader.com",
+      "required": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      },
+      "fields": {
+        "path": [],
+        "query": [],
+        "body": [],
+        "header": []
+      }
+    }
+  ]
+}

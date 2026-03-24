@@ -927,6 +927,10 @@
  *             example:
  *               success: true
  *               message: Profile completed successfully
+ *               matchTraderSync:
+ *                 synced: true
+ *                 source: existing
+ *                 account_uuid: c7fb2e9a-13bb-4a95-8f60-8ee2f95af669
  *       400:
  *         description: Validation error
  *         content:
@@ -945,6 +949,8 @@
  *           application/json:
  *             example:
  *               error: Forbidden. You can only complete your own profile.
+ *       502:
+ *         description: Match-Trader sync failed
  */
 
 /**
@@ -2220,7 +2226,7 @@
  * /api/matchtrader/customer/orders:
  *   get:
  *     tags: [MatchTrader Customer]
- *     summary: Get active, pending, and closed orders for selected trading account
+ *     summary: Get open positions, pending orders, and closed orders for selected trading account
  *     parameters:
  *       - in: query
  *         name: trading_account_id
@@ -2267,9 +2273,60 @@
  *               success: true
  *               data:
  *                 trading_account_id: "1000123"
- *                 active_orders: []
- *                 pending_orders: []
+ *                 active_orders:
+ *                   - positionId: "pos-123"
+ *                 open_positions:
+ *                   - positionId: "pos-123"
+ *                 pending_orders:
+ *                   - orderId: "ord-9001"
  *                 closed_orders: []
+ *       400:
+ *         description: Missing trading_account_id
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/customer/open-positions:
+ *   get:
+ *     tags: [MatchTrader Customer]
+ *     summary: Get open positions only for selected trading account
+ *     parameters:
+ *       - in: query
+ *         name: trading_account_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: "1000123"
+ *       - in: query
+ *         name: from
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - in: query
+ *         name: to
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - in: query
+ *         name: system_uuid
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Optional provider system UUID override.
+ *     responses:
+ *       200:
+ *         description: Open positions fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 trading_account_id: "1000123"
+ *                 open_positions: []
  *       400:
  *         description: Missing trading_account_id
  *       401:
@@ -2281,7 +2338,7 @@
  * /api/matchtrader/customer/all-orders:
  *   get:
  *     tags: [MatchTrader Customer]
- *     summary: Get active, pending, and closed orders across all user trading accounts
+ *     summary: Get open positions, pending orders, and closed orders across all user trading accounts
  *     parameters:
  *       - in: query
  *         name: from
@@ -2325,6 +2382,10 @@
  *                   - trading_account_id: "91350"
  *                     account_mode: DEMO
  *                     order: {}
+ *                 open_positions:
+ *                   - trading_account_id: "91350"
+ *                     account_mode: DEMO
+ *                     order: {}
  *                 pending_orders:
  *                   - trading_account_id: "91350"
  *                     account_mode: DEMO
@@ -2336,6 +2397,7 @@
  *                 summary:
  *                   trading_accounts_count: 2
  *                   active_count: 1
+ *                   open_positions_count: 1
  *                   pending_count: 1
  *                   closed_count: 1
  *       401:
@@ -2581,10 +2643,12 @@
  *               success: true
  *               data:
  *                 active_orders: []
+ *                 open_positions: []
  *                 pending_orders: []
  *                 closed_orders: []
  *                 summary:
  *                   active_count: 0
+ *                   open_positions_count: 0
  *                   pending_count: 0
  *                   closed_count: 0
  *       401:
