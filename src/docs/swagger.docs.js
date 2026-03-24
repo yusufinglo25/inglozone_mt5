@@ -2049,12 +2049,6 @@
  *                 type: number
  *                 example: 10000
  *                 description: Used only when mode=DEMO.
- *               broker_account_uuid:
- *                 type: string
- *                 example: c7fb2e9a-13bb-4a95-8f60-8ee2f95af669
- *               broker_password:
- *                 type: string
- *                 example: TempStrong#123
  *     responses:
  *       201:
  *         description: Trading account created
@@ -2068,6 +2062,7 @@
  *                 broker_account_uuid: c7fb2e9a-13bb-4a95-8f60-8ee2f95af669
  *                 provider_password_returned: false
  *                 provider_generated_password: null
+ *                 password_note: Use POST /api/matchtrader/customer/change-password to set or reset platform password.
  *                 provider:
  *                   login: "1000123"
  *                   status: ACTIVE
@@ -2082,6 +2077,7 @@
  *                 status: CONFIRM
  *                 provider_password_returned: false
  *                 provider_generated_password: null
+ *                 password_note: Use POST /api/matchtrader/customer/change-password to set or reset platform password.
  *                 message: Trading account request submitted and awaits broker confirmation.
  *                 selected_offer:
  *                   offer_uuid: 21f85522-c043-4ed5-ae99-d4c28a316b57
@@ -2178,7 +2174,7 @@
  * /api/matchtrader/customer/change-password:
  *   post:
  *     tags: [MatchTrader Customer]
- *     summary: Change trading platform password
+ *     summary: Change Match-Trader platform password (resolved via account UUID)
  *     requestBody:
  *       required: true
  *       content:
@@ -2339,6 +2335,7 @@
  *                 broker_account_uuid: c7fb2e9a-13bb-4a95-8f60-8ee2f95af669
  *                 provider_password_returned: false
  *                 provider_generated_password: null
+ *                 password_note: Use POST /api/matchtrader/customer/change-password to set or reset platform password.
  *                 initial_deposit:
  *                   trading_account_id: "2000456"
  *                   amount: 10000

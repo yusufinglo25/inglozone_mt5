@@ -61,8 +61,7 @@ class MatchTraderService {
       payload.login,
       payload.tradingAccountId,
       payload.accountId,
-      payload.id,
-      payload.uuid
+      payload.id
     ]
       .map((item) => (item === undefined || item === null ? null : String(item).trim()))
       .filter(Boolean)
@@ -155,12 +154,7 @@ class MatchTraderService {
     const normalizedNewPassword = String(newPassword || '').trim()
     if (!normalizedAccountUuid || !normalizedNewPassword) return []
 
-    const payloads = [
-      { accountUuid: normalizedAccountUuid, newPassword: normalizedNewPassword },
-      { accountUuid: normalizedAccountUuid, password: normalizedNewPassword },
-      { uuid: normalizedAccountUuid, newPassword: normalizedNewPassword },
-      { uuid: normalizedAccountUuid, password: normalizedNewPassword }
-    ]
+    const payloads = [{ accountUuid: normalizedAccountUuid, newPassword: normalizedNewPassword }]
 
     const normalizedCurrent = String(currentPassword || '').trim()
     if (normalizedCurrent) {
@@ -179,10 +173,9 @@ class MatchTraderService {
     }
 
     const paths = [
+      '/v1/change-password',
       '/v1/accounts/change-password',
-      '/v1/account/change-password',
-      '/v1/accounts/password/change',
-      '/v1/change-password'
+      '/v1/account/change-password'
     ]
 
     return paths.flatMap((path) =>
@@ -268,69 +261,18 @@ class MatchTraderService {
 
   buildTradingAccountCreateVariants({
     offerUuid,
-    mode,
-    selectedOffer,
     body = {}
   }) {
-    const normalizedMode = this.normalizeMode(mode)
-    const isDemo = normalizedMode === 'DEMO'
     const commissionUuid = this.pickFirstString([body.commission_uuid, body.commissionUuid])
-    const requestedCurrency = this.normalizeCurrencyValue(body.currency)
-    const requestedLeverage = this.normalizeLeverageValue(body.leverage)
-    const offerCurrency = this.normalizeCurrencyValue(selectedOffer && selectedOffer.currency)
-    const offerLeverage = this.normalizeLeverageValue(selectedOffer && selectedOffer.leverage)
-    const preferredCurrency = requestedCurrency || offerCurrency
-    const preferredLeverage = requestedLeverage || offerLeverage
 
     const base = {
       offerUuid,
       ...(commissionUuid ? { commissionUuid } : {})
     }
 
-    const variants = [
-      {
-        ...base,
-        ...(preferredCurrency ? { currency: preferredCurrency } : {}),
-        ...(preferredLeverage ? { leverage: preferredLeverage } : {}),
-        ...(isDemo ? { demo: true } : {})
-      },
-      {
-        ...base,
-        ...(isDemo ? { demo: true } : {})
-      },
-      {
-        ...base,
-        ...(preferredCurrency ? { currency: preferredCurrency } : {}),
-        ...(isDemo ? { demo: true } : {})
-      },
-      {
-        ...base,
-        ...(preferredLeverage ? { leverage: preferredLeverage } : {}),
-        ...(isDemo ? { demo: true } : {})
-      }
-    ]
-
-    // Some broker setups infer DEMO by offer and reject explicit demo flag.
-    if (isDemo) {
-      variants.push(
-        {
-          ...base,
-          ...(preferredCurrency ? { currency: preferredCurrency } : {}),
-          ...(preferredLeverage ? { leverage: preferredLeverage } : {})
-        },
-        { ...base }
-      )
-    }
-
-    const deduped = []
-    const seen = new Set()
-    for (const variant of variants) {
-      const key = JSON.stringify(variant)
-      if (seen.has(key)) continue
-      seen.add(key)
-      deduped.push(variant)
-    }
-    return deduped
+    // Match-Trader create endpoint documents only offerUuid (+ optional commissionUuid).
+    // Avoid sending extra fields that can cause provider-side rejections for valid offers.
+    return [base]
   }
 
   async executePasswordChangePlans(plans = []) {
@@ -421,13 +363,31 @@ class MatchTraderService {
   }
 
   async getLocalTradingAccountForUser(userId, tradingAccountId) {
-    const rows = await this.query(
+    const accountId = String(tradingAccountId || '').trim()
+    let rows = await this.query(
       `SELECT id, user_id, mode, type, currency, leverage, status, created_at
        FROM trading_accounts
        WHERE id = ? AND user_id = ?
        LIMIT 1`,
-      [String(tradingAccountId), userId]
+      [accountId, userId]
     )
+
+    if (!rows.length) {
+      try {
+        const user = await this.getUserById(userId)
+        await this.syncLocalTradingAccountsForUser(userId, user)
+        rows = await this.query(
+          `SELECT id, user_id, mode, type, currency, leverage, status, created_at
+           FROM trading_accounts
+           WHERE id = ? AND user_id = ?
+           LIMIT 1`,
+          [accountId, userId]
+        )
+      } catch (error) {
+        // Preserve original not-found behavior if provider sync is unavailable.
+      }
+    }
+
     if (!rows.length) {
       throw new MatchTraderApiError('Trading account not found for user', {
         statusCode: 404,
@@ -535,7 +495,10 @@ class MatchTraderService {
       }
     }
     const created = await this.client.post('/v1/accounts', payload)
-    return this.unwrapData(created)
+    return {
+      account: this.unwrapData(created),
+      password
+    }
   }
 
   async ensureBrokerAccount(user, body = {}) {
@@ -549,7 +512,12 @@ class MatchTraderService {
       body.brokerAccountUuid
     ])
     if (brokerAccountUuidFromRequest) {
-      return { uuid: brokerAccountUuidFromRequest, source: 'request', generated_password: '' }
+      return {
+        uuid: brokerAccountUuidFromRequest,
+        source: 'request',
+        generated_password: '',
+        creation_password: ''
+      }
     }
 
     const byEmail = await this.findBrokerAccountByEmail(user.email)
@@ -558,15 +526,123 @@ class MatchTraderService {
       return {
         uuid: existingUuid,
         source: 'existing',
-        generated_password: this.extractProviderGeneratedPassword(byEmail)
+        generated_password: '',
+        creation_password: ''
       }
     }
 
     const created = await this.createBrokerAccountForUser(user, preferredCreationPassword || undefined)
     return {
-      uuid: this.pickFirstString([created.uuid, created.accountUuid, created.id]),
+      uuid: this.pickFirstString([
+        created.account && created.account.uuid,
+        created.account && created.account.accountUuid,
+        created.account && created.account.id
+      ]),
       source: 'created',
-      generated_password: this.extractProviderGeneratedPassword(created)
+      generated_password: this.extractProviderGeneratedPassword(created.account || {}),
+      creation_password: created.password || ''
+    }
+  }
+
+  extractProviderTradingAccountEmail(providerAccount = {}) {
+    return this.pickFirstString([
+      providerAccount.email,
+      providerAccount.accountInfo && providerAccount.accountInfo.email,
+      providerAccount.account && providerAccount.account.email
+    ])
+  }
+
+  mapProviderTradingAccount(providerAccount = {}) {
+    const tradingAccountId = this.findTradingAccountId(providerAccount)
+    if (!tradingAccountId) return null
+
+    return {
+      tradingAccountId,
+      mode: this.normalizeMode(
+        this.pickFirstString([
+          providerAccount.accountType,
+          providerAccount.mode,
+          providerAccount.type
+        ]) || 'REAL'
+      ),
+      type: this.pickFirstString([
+        providerAccount.group,
+        providerAccount.offerName,
+        providerAccount.offerUuid,
+        providerAccount.accountType
+      ]),
+      currency: this.pickFirstString([
+        providerAccount.currency,
+        providerAccount.financeInfo && providerAccount.financeInfo.currency,
+        providerAccount.accountInfo && providerAccount.accountInfo.currency
+      ]),
+      leverage: this.pickFirstString([
+        providerAccount.leverage,
+        providerAccount.financeInfo && providerAccount.financeInfo.leverage
+      ]),
+      status: this.pickFirstString([
+        providerAccount.status,
+        providerAccount.access,
+        providerAccount.state
+      ]) || 'ACTIVE',
+      email: this.extractProviderTradingAccountEmail(providerAccount)
+    }
+  }
+
+  async listProviderTradingAccountsByEmail(email) {
+    const normalizedEmail = String(email || '').trim()
+    if (!normalizedEmail) return []
+
+    const payload = await this.fetchWithPayloadVariants('/v1/trading-accounts', 'GET', [
+      { query: normalizedEmail, page: 0, size: 200 },
+      { query: normalizedEmail, size: 200 },
+      { query: normalizedEmail },
+      { email: normalizedEmail, page: 0, size: 200 },
+      { email: normalizedEmail }
+    ])
+    return this.parseCollection(payload)
+  }
+
+  async syncLocalTradingAccountsForUser(userId, user = null) {
+    const resolvedUser = user || await this.getUserById(userId)
+    const normalizedEmail = String(resolvedUser.email || '').trim().toLowerCase()
+    if (!normalizedEmail) return { scanned: 0, synced: 0 }
+
+    const providerAccounts = await this.listProviderTradingAccountsByEmail(normalizedEmail)
+    let synced = 0
+
+    for (const providerAccount of providerAccounts) {
+      const mapped = this.mapProviderTradingAccount(providerAccount)
+      if (!mapped) continue
+
+      const providerEmail = String(mapped.email || '').trim().toLowerCase()
+      if (providerEmail && providerEmail !== normalizedEmail) continue
+
+      try {
+        await this.upsertTradingAccountForUser({
+          userId,
+          tradingAccountId: mapped.tradingAccountId,
+          mode: mapped.mode,
+          type: mapped.type,
+          currency: mapped.currency,
+          leverage: mapped.leverage,
+          status: mapped.status
+        })
+        synced += 1
+      } catch (error) {
+        if (
+          error instanceof MatchTraderApiError &&
+          error.code === 'TRADING_ACCOUNT_OWNERSHIP_CONFLICT'
+        ) {
+          continue
+        }
+        throw error
+      }
+    }
+
+    return {
+      scanned: providerAccounts.length,
+      synced
     }
   }
 
@@ -640,6 +716,7 @@ class MatchTraderService {
 
   async createTradingAccountForUser(userId, body = {}) {
     const user = await this.getUserById(userId)
+    const passwordNote = 'Use POST /api/matchtrader/customer/change-password to set or reset platform password.'
     const mode = this.normalizeMode(body.mode || body.account_mode)
     const requestedOfferUuid = String(body.offer_uuid || body.offerUuid || '').trim()
     if (!requestedOfferUuid) {
@@ -672,8 +749,6 @@ class MatchTraderService {
 
     const createVariants = this.buildTradingAccountCreateVariants({
       offerUuid,
-      mode,
-      selectedOffer,
       body
     })
 
@@ -717,7 +792,14 @@ class MatchTraderService {
     }
 
     let brokerAccountUuidUsed = brokerAccount.uuid
-    let generatedPassword = this.pickFirstString([brokerAccount.generated_password])
+    let knownPassword = ''
+    let providerPasswordReturned = false
+    if (brokerAccount.generated_password) {
+      knownPassword = brokerAccount.generated_password
+      providerPasswordReturned = true
+    } else if (brokerAccount.creation_password) {
+      knownPassword = brokerAccount.creation_password
+    }
     let attempt = await tryCreateTradingAccount(brokerAccountUuidUsed)
 
     // In sandbox/shared environments, existing account UUID may not be writable for current token.
@@ -737,16 +819,23 @@ class MatchTraderService {
           user,
           preferredCreationPassword || undefined
         )
+        const freshBrokerAccountPayload = freshBrokerAccount.account || {}
         const freshBrokerUuid = this.pickFirstString([
-          freshBrokerAccount.uuid,
-          freshBrokerAccount.accountUuid,
-          freshBrokerAccount.id
+          freshBrokerAccountPayload.uuid,
+          freshBrokerAccountPayload.accountUuid,
+          freshBrokerAccountPayload.id
         ])
         if (freshBrokerUuid && freshBrokerUuid !== brokerAccountUuidUsed) {
           brokerAccountUuidUsed = freshBrokerUuid
-          const fallbackGeneratedPassword = this.extractProviderGeneratedPassword(freshBrokerAccount)
-          if (!generatedPassword && fallbackGeneratedPassword) {
-            generatedPassword = fallbackGeneratedPassword
+          const fallbackProviderPassword = this.extractProviderGeneratedPassword(
+            freshBrokerAccountPayload
+          )
+          if (!knownPassword && fallbackProviderPassword) {
+            knownPassword = fallbackProviderPassword
+            providerPasswordReturned = true
+          }
+          if (!knownPassword && freshBrokerAccount.password) {
+            knownPassword = freshBrokerAccount.password
           }
           const retryAttempt = await tryCreateTradingAccount(brokerAccountUuidUsed)
           if (retryAttempt.created) {
@@ -779,8 +868,9 @@ class MatchTraderService {
     }
 
     const tradingAccountGeneratedPassword = this.extractProviderGeneratedPassword(created)
-    if (!generatedPassword && tradingAccountGeneratedPassword) {
-      generatedPassword = tradingAccountGeneratedPassword
+    if (tradingAccountGeneratedPassword) {
+      knownPassword = tradingAccountGeneratedPassword
+      providerPasswordReturned = true
     }
 
     const tradingAccountId = this.findTradingAccountId(created)
@@ -792,8 +882,9 @@ class MatchTraderService {
           status: providerStatus,
           mode,
           broker_account_uuid: brokerAccountUuidUsed,
-          provider_password_returned: Boolean(generatedPassword),
-          provider_generated_password: generatedPassword || null,
+          provider_password_returned: providerPasswordReturned,
+          provider_generated_password: knownPassword || null,
+          password_note: passwordNote,
           selected_offer: selectedOffer,
           message: 'Trading account request submitted and awaits broker confirmation.',
           provider: created
@@ -830,8 +921,9 @@ class MatchTraderService {
       trading_account_id: String(tradingAccountId),
       mode,
       broker_account_uuid: brokerAccountUuidUsed,
-      provider_password_returned: Boolean(generatedPassword),
-      provider_generated_password: generatedPassword || null,
+      provider_password_returned: providerPasswordReturned,
+      provider_generated_password: knownPassword || null,
+      password_note: passwordNote,
       selected_offer: selectedOffer,
       provider: created
     }
@@ -869,6 +961,13 @@ class MatchTraderService {
   }
 
   async listCustomerTradingAccounts(userId) {
+    const user = await this.getUserById(userId)
+    try {
+      await this.syncLocalTradingAccountsForUser(userId, user)
+    } catch (error) {
+      console.warn(`[MatchTrader][sync-warning] user=${userId} message=${error.message}`)
+    }
+
     const local = await this.listLocalTradingAccountsByUser(userId)
 
     const accounts = await Promise.all(local.map(async (item) => {
@@ -912,6 +1011,7 @@ class MatchTraderService {
       })
     }
 
+    const user = await this.getUserById(userId)
     await this.getLocalTradingAccountForUser(userId, tradingAccountId)
     const currentPassword = this.pickFirstString([
       body.current_password,
@@ -929,24 +1029,20 @@ class MatchTraderService {
 
     let accountUuid = this.extractBrokerAccountUuid(tradingAccountDetails || {})
     if (!accountUuid) {
-      const user = await this.getUserById(userId)
       const byEmail = await this.findBrokerAccountByEmail(user.email)
       if (byEmail) {
         accountUuid = this.pickFirstString([byEmail.uuid, byEmail.accountUuid, byEmail.id])
       }
     }
 
-    const plans = [
-      ...(accountUuid
-        ? this.buildAccountPasswordChangePlans(accountUuid, newPassword, currentPassword)
-        : []),
-      ...this.buildTradingPasswordChangePlans({
-        tradingAccountId,
-        newPassword,
-        currentPassword,
-        systemUuid: this.extractSystemUuid(tradingAccountDetails || {})
+    if (!accountUuid) {
+      throw new MatchTraderApiError('Unable to resolve Match-Trader account UUID for password change', {
+        statusCode: 422,
+        code: 'BROKER_ACCOUNT_RESOLUTION_FAILED'
       })
-    ]
+    }
+
+    const plans = this.buildAccountPasswordChangePlans(accountUuid, newPassword, currentPassword)
 
     const provider = await this.executePasswordChangePlans(plans)
     return {
@@ -1237,6 +1333,11 @@ class MatchTraderService {
 
   async getAdminUserDetails(userId, query = {}) {
     const user = await this.getUserByIdForAdmin(userId)
+    try {
+      await this.syncLocalTradingAccountsForUser(userId, user)
+    } catch (error) {
+      console.warn(`[MatchTrader][admin-sync-warning] user=${userId} message=${error.message}`)
+    }
     const localAccounts = await this.listLocalTradingAccountsByUser(userId)
 
     const tradingAccounts = await Promise.all(localAccounts.map(async (account) => {
