@@ -261,18 +261,48 @@ class MatchTraderService {
 
   buildTradingAccountCreateVariants({
     offerUuid,
+    selectedOffer,
     body = {}
   }) {
     const commissionUuid = this.pickFirstString([body.commission_uuid, body.commissionUuid])
+    const requestedCurrency = this.normalizeCurrencyValue(body.currency)
+    const requestedLeverage = this.normalizeLeverageValue(body.leverage)
+    const offerCurrency = this.normalizeCurrencyValue(selectedOffer && selectedOffer.currency)
+    const offerLeverage = this.normalizeLeverageValue(selectedOffer && selectedOffer.leverage)
+    const preferredCurrency = requestedCurrency || offerCurrency
+    const preferredLeverage = requestedLeverage || offerLeverage
 
     const base = {
       offerUuid,
       ...(commissionUuid ? { commissionUuid } : {})
     }
 
-    // Match-Trader create endpoint documents only offerUuid (+ optional commissionUuid).
-    // Avoid sending extra fields that can cause provider-side rejections for valid offers.
-    return [base]
+    const variants = [base]
+
+    // Some environments require explicit currency/leverage for specific real offers.
+    if (preferredCurrency) {
+      variants.push({ ...base, currency: preferredCurrency })
+    }
+    if (preferredLeverage && preferredLeverage !== '0') {
+      variants.push({ ...base, leverage: preferredLeverage })
+    }
+    if (preferredCurrency && preferredLeverage && preferredLeverage !== '0') {
+      variants.push({
+        ...base,
+        currency: preferredCurrency,
+        leverage: preferredLeverage
+      })
+    }
+
+    const deduped = []
+    const seen = new Set()
+    for (const variant of variants) {
+      const key = JSON.stringify(variant)
+      if (seen.has(key)) continue
+      seen.add(key)
+      deduped.push(variant)
+    }
+    return deduped
   }
 
   async executePasswordChangePlans(plans = []) {
@@ -749,6 +779,7 @@ class MatchTraderService {
 
     const createVariants = this.buildTradingAccountCreateVariants({
       offerUuid,
+      selectedOffer,
       body
     })
 
@@ -1079,30 +1110,76 @@ class MatchTraderService {
     })
   }
 
-  async fetchOrdersByLogin(tradingAccountId, filters = {}) {
+  buildTradingAccountQueryVariants(tradingAccountId, baseFilters = {}, systemUuid = '') {
+    const queryBases = [
+      { login: tradingAccountId },
+      { accountLogin: tradingAccountId },
+      { tradingAccountLogin: tradingAccountId }
+    ]
+
+    const withSystem = systemUuid
+      ? queryBases.map((base) => ({ ...base, systemUuid, ...baseFilters }))
+      : []
+    const withoutSystem = queryBases.map((base) => ({ ...base, ...baseFilters }))
+
+    return withSystem.length ? [...withSystem, ...withoutSystem] : withoutSystem
+  }
+
+  async resolveTradingSystemUuid(tradingAccountId, filters = {}, options = {}) {
+    const explicitSystemUuid = this.pickFirstString([
+      options.systemUuid,
+      filters.system_uuid,
+      filters.systemUuid
+    ])
+    if (explicitSystemUuid) return explicitSystemUuid
+
+    try {
+      const details = await this.getTradingAccountDetailsFromProvider(tradingAccountId)
+      const fromDetails = this.extractSystemUuid(details || {})
+      if (fromDetails) return fromDetails
+    } catch (error) {
+      // fall through
+    }
+
+    const userEmail = this.pickFirstString([options.userEmail, filters.user_email, filters.userEmail])
+    if (userEmail) {
+      try {
+        const providerAccounts = await this.listProviderTradingAccountsByEmail(userEmail)
+        const matched = providerAccounts.find(
+          (item) => String(this.findTradingAccountId(item) || '') === String(tradingAccountId)
+        )
+        const fromList = this.extractSystemUuid(matched || {})
+        if (fromList) return fromList
+      } catch (error) {
+        // fall through
+      }
+    }
+
+    return ''
+  }
+
+  async fetchOrdersByLogin(tradingAccountId, filters = {}, options = {}) {
     const baseFilters = {
       ...(filters.from ? { from: filters.from } : {}),
       ...(filters.to ? { to: filters.to } : {})
     }
+    const systemUuid = await this.resolveTradingSystemUuid(tradingAccountId, filters, options)
+    const queryVariants = this.buildTradingAccountQueryVariants(
+      tradingAccountId,
+      baseFilters,
+      systemUuid
+    )
 
     const activeOrders = await this.fetchWithPayloadVariants(
       '/v1/trading-accounts/trading-data/active-orders',
       'GET',
-      [
-        { login: tradingAccountId, ...baseFilters },
-        { accountLogin: tradingAccountId, ...baseFilters },
-        { tradingAccountLogin: tradingAccountId, ...baseFilters }
-      ]
+      queryVariants
     )
 
     const closedOrders = await this.fetchWithPayloadVariants(
       '/v1/trading-accounts/trading-data/closed-positions',
       'GET',
-      [
-        { login: tradingAccountId, ...baseFilters },
-        { accountLogin: tradingAccountId, ...baseFilters },
-        { tradingAccountLogin: tradingAccountId, ...baseFilters }
-      ]
+      queryVariants
     )
 
     const active = this.parseCollection(activeOrders)
@@ -1126,7 +1203,10 @@ class MatchTraderService {
     }
 
     await this.getLocalTradingAccountForUser(userId, tradingAccountId)
-    const orders = await this.fetchOrdersByLogin(tradingAccountId, query)
+    const user = await this.getUserById(userId)
+    const orders = await this.fetchOrdersByLogin(tradingAccountId, query, {
+      userEmail: user.email
+    })
 
     return {
       trading_account_id: tradingAccountId,
@@ -1134,20 +1214,22 @@ class MatchTraderService {
     }
   }
 
-  async getOrderHistoryByLogin(tradingAccountId, filters = {}) {
+  async getOrderHistoryByLogin(tradingAccountId, filters = {}, options = {}) {
     const baseBody = {
       ...(filters.from ? { from: filters.from } : {}),
       ...(filters.to ? { to: filters.to } : {})
     }
+    const systemUuid = await this.resolveTradingSystemUuid(tradingAccountId, filters, options)
+    const systemBody = systemUuid ? { systemUuid } : {}
 
     const payload = await this.fetchWithPayloadVariants(
       '/v1/trading-accounts/trading-data/order-history',
       'POST',
       [
-        { ...baseBody, logins: [tradingAccountId] },
-        { ...baseBody, loginList: [tradingAccountId] },
-        { ...baseBody, tradingAccountLogins: [tradingAccountId] },
-        { ...baseBody, accountLogins: [tradingAccountId] }
+        { ...baseBody, ...systemBody, logins: [tradingAccountId] },
+        { ...baseBody, ...systemBody, loginList: [tradingAccountId] },
+        { ...baseBody, ...systemBody, tradingAccountLogins: [tradingAccountId] },
+        { ...baseBody, ...systemBody, accountLogins: [tradingAccountId] }
       ]
     )
 
@@ -1164,12 +1246,17 @@ class MatchTraderService {
     }
 
     await this.getLocalTradingAccountForUser(userId, tradingAccountId)
+    const user = await this.getUserById(userId)
 
     let orderHistory = []
     try {
-      orderHistory = await this.getOrderHistoryByLogin(tradingAccountId, query)
+      orderHistory = await this.getOrderHistoryByLogin(tradingAccountId, query, {
+        userEmail: user.email
+      })
     } catch (error) {
-      const fallbackOrders = await this.fetchOrdersByLogin(tradingAccountId, query)
+      const fallbackOrders = await this.fetchOrdersByLogin(tradingAccountId, query, {
+        userEmail: user.email
+      })
       orderHistory = [
         ...fallbackOrders.closed_orders,
         ...fallbackOrders.active_orders
@@ -1286,7 +1373,9 @@ class MatchTraderService {
     const accounts = await this.listAllLocalTradingAccounts()
     const aggregated = await this.mapWithConcurrency(accounts, async (account) => {
       try {
-        const orders = await this.fetchOrdersByLogin(account.id, query)
+        const orders = await this.fetchOrdersByLogin(account.id, query, {
+          userEmail: account.email || ''
+        })
         return {
           account,
           orders
@@ -1351,7 +1440,9 @@ class MatchTraderService {
       }
 
       try {
-        history = await this.getOrderHistoryByLogin(account.id, query)
+        history = await this.getOrderHistoryByLogin(account.id, query, {
+          userEmail: user.email || ''
+        })
       } catch (error) {
         history = []
       }

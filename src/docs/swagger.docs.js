@@ -2045,6 +2045,10 @@
  *               currency:
  *                 type: string
  *                 example: USD
+ *               commission_uuid:
+ *                 type: string
+ *                 example: 22222222-3333-4444-5555-666666666666
+ *                 description: Optional. Required by some broker setups/offers.
  *               initial_balance:
  *                 type: number
  *                 example: 10000
@@ -2236,6 +2240,12 @@
  *         schema:
  *           type: string
  *           format: date-time
+ *       - in: query
+ *         name: system_uuid
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Optional override if provider requires explicit systemUuid.
  *     responses:
  *       200:
  *         description: Orders fetched
@@ -2279,6 +2289,12 @@
  *         schema:
  *           type: string
  *           format: date-time
+ *       - in: query
+ *         name: system_uuid
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Optional override if provider requires explicit systemUuid.
  *     responses:
  *       200:
  *         description: Trading history fetched
@@ -2319,6 +2335,10 @@
  *               currency:
  *                 type: string
  *                 example: USD
+ *               commission_uuid:
+ *                 type: string
+ *                 example: 22222222-3333-4444-5555-666666666666
+ *                 description: Optional. Required by some broker setups/offers.
  *               initial_balance:
  *                 type: number
  *                 example: 10000
