@@ -1,7 +1,25 @@
 const { v4: uuidv4 } = require('uuid')
 const db = require('../config/db')
+const { decryptSecret } = require('../utils/encrypted-secret')
 
 class AdminInvestorService {
+  investorPasswordKey() {
+    return (
+      process.env.MATCH_TRADER_INVESTOR_PASSWORD_KEY ||
+      process.env.MATCH_TRADER_PASSWORD_ENCRYPTION_KEY ||
+      process.env.JWT_SECRET ||
+      'investor-matchtrader-password'
+    )
+  }
+
+  decryptInvestorPassword(encryptedBase64, ivHex) {
+    try {
+      return decryptSecret(encryptedBase64, ivHex, this.investorPasswordKey())
+    } catch (error) {
+      return null
+    }
+  }
+
   async getUsers({ page = 1, limit = 20, accountType = null }) {
     const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 200)
     const safePage = Math.max(parseInt(page, 10) || 1, 1)
@@ -77,19 +95,47 @@ class AdminInvestorService {
       params.push(normalizedStatus)
     }
 
-    const [rows] = await db.promise().query(
-      `SELECT
-         u.id AS userId, u.first_name AS firstName, u.last_name AS lastName, u.email,
-         ia.account_status AS accountStatus, ia.balance, ia.equity,
-         ia.floating_profit_loss AS floatingProfitLoss, ia.total_profit_loss AS totalProfitLoss,
-         ia.approved_at AS approvedAt, ia.created_at AS createdAt
-       FROM users u
-       LEFT JOIN investor_accounts ia ON ia.user_id = u.id
-       WHERE ${where.join(' AND ')}
-       ORDER BY u.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [...params, safeLimit, offset]
-    )
+    const investorSelectSql = `
+      SELECT
+        u.id AS userId, u.first_name AS firstName, u.last_name AS lastName, u.email,
+        ia.account_status AS accountStatus, ia.balance, ia.equity,
+        ia.floating_profit_loss AS floatingProfitLoss, ia.total_profit_loss AS totalProfitLoss,
+        ia.approved_at AS approvedAt, ia.created_at AS createdAt,
+        ia.match_trader_mode AS matchTraderMode,
+        ia.match_trader_offer_uuid AS matchTraderOfferUuid,
+        ia.match_trader_broker_account_uuid AS matchTraderBrokerAccountUuid,
+        ia.match_trader_trading_account_id AS matchTraderTradingAccountId,
+        ia.match_trader_password_encrypted AS matchTraderPasswordEncrypted,
+        ia.match_trader_password_iv AS matchTraderPasswordIv,
+        ia.match_trader_password_available AS matchTraderPasswordAvailable,
+        ia.match_trader_sync_status AS matchTraderSyncStatus,
+        ia.match_trader_sync_error AS matchTraderSyncError,
+        ia.match_trader_synced_at AS matchTraderSyncedAt
+      FROM users u
+      LEFT JOIN investor_accounts ia ON ia.user_id = u.id
+      WHERE ${where.join(' AND ')}
+      ORDER BY u.created_at DESC
+      LIMIT ? OFFSET ?`
+
+    const legacyInvestorSelectSql = `
+      SELECT
+        u.id AS userId, u.first_name AS firstName, u.last_name AS lastName, u.email,
+        ia.account_status AS accountStatus, ia.balance, ia.equity,
+        ia.floating_profit_loss AS floatingProfitLoss, ia.total_profit_loss AS totalProfitLoss,
+        ia.approved_at AS approvedAt, ia.created_at AS createdAt
+      FROM users u
+      LEFT JOIN investor_accounts ia ON ia.user_id = u.id
+      WHERE ${where.join(' AND ')}
+      ORDER BY u.created_at DESC
+      LIMIT ? OFFSET ?`
+
+    let rows
+    try {
+      ;([rows] = await db.promise().query(investorSelectSql, [...params, safeLimit, offset]))
+    } catch (error) {
+      if (error?.code !== 'ER_BAD_FIELD_ERROR') throw error
+      ;([rows] = await db.promise().query(legacyInvestorSelectSql, [...params, safeLimit, offset]))
+    }
 
     const [[countRow]] = await db.promise().query(
       `SELECT COUNT(*) AS total
@@ -99,7 +145,17 @@ class AdminInvestorService {
       params
     )
 
-    return { investors: rows, total: countRow.total, page: safePage, limit: safeLimit }
+    const investors = rows.map((row) => {
+      const { matchTraderPasswordEncrypted, matchTraderPasswordIv, ...safeRow } = row
+      return {
+        ...safeRow,
+        matchTraderGeneratedPassword: row.matchTraderPasswordAvailable
+          ? this.decryptInvestorPassword(matchTraderPasswordEncrypted, matchTraderPasswordIv)
+          : null
+      }
+    })
+
+    return { investors, total: countRow.total, page: safePage, limit: safeLimit }
   }
 
   async approveInvestorAccount(userId) {

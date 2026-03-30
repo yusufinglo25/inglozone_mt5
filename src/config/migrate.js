@@ -1118,10 +1118,22 @@ function runInvestorMigrations() {
       equity DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
       floating_profit_loss DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
       total_profit_loss DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+      match_trader_mode ENUM('REAL','DEMO') NULL,
+      match_trader_offer_uuid VARCHAR(128) NULL,
+      match_trader_broker_account_uuid VARCHAR(128) NULL,
+      match_trader_trading_account_id VARCHAR(128) NULL,
+      match_trader_password_encrypted TEXT NULL,
+      match_trader_password_iv VARCHAR(64) NULL,
+      match_trader_password_available BOOLEAN NOT NULL DEFAULT false,
+      match_trader_sync_status ENUM('pending','success','failed') NOT NULL DEFAULT 'pending',
+      match_trader_sync_error TEXT NULL,
+      match_trader_synced_at TIMESTAMP NULL,
       approved_at TIMESTAMP NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       INDEX idx_investor_status (account_status),
+      INDEX idx_investor_mt_sync_status (match_trader_sync_status),
+      INDEX idx_investor_mt_account (match_trader_trading_account_id),
       CONSTRAINT fk_investor_account_user
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -1132,8 +1144,66 @@ function runInvestorMigrations() {
       console.error('Error creating investor_accounts:', err.message)
     } else {
       console.log('Investor accounts table verified')
+      ensureInvestorAccountColumns()
     }
   })
+}
+
+function ensureInvestorAccountColumns() {
+  const columns = [
+    { name: 'match_trader_mode', type: "ENUM('REAL','DEMO') NULL AFTER total_profit_loss" },
+    { name: 'match_trader_offer_uuid', type: 'VARCHAR(128) NULL AFTER match_trader_mode' },
+    { name: 'match_trader_broker_account_uuid', type: 'VARCHAR(128) NULL AFTER match_trader_offer_uuid' },
+    { name: 'match_trader_trading_account_id', type: 'VARCHAR(128) NULL AFTER match_trader_broker_account_uuid' },
+    { name: 'match_trader_password_encrypted', type: 'TEXT NULL AFTER match_trader_trading_account_id' },
+    { name: 'match_trader_password_iv', type: 'VARCHAR(64) NULL AFTER match_trader_password_encrypted' },
+    { name: 'match_trader_password_available', type: 'BOOLEAN NOT NULL DEFAULT false AFTER match_trader_password_iv' },
+    { name: 'match_trader_sync_status', type: "ENUM('pending','success','failed') NOT NULL DEFAULT 'pending' AFTER match_trader_password_available" },
+    { name: 'match_trader_sync_error', type: 'TEXT NULL AFTER match_trader_sync_status' },
+    { name: 'match_trader_synced_at', type: 'TIMESTAMP NULL AFTER match_trader_sync_error' }
+  ]
+
+  ensureInvestorAccountColumnsRecursive(columns, 0)
+}
+
+function ensureInvestorAccountColumnsRecursive(columns, index) {
+  if (index >= columns.length) {
+    console.log('Investor account Match-Trader columns verified')
+    return
+  }
+
+  const column = columns[index]
+  db.query(
+    `SELECT COUNT(*) AS exists_flag
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'investor_accounts'
+       AND COLUMN_NAME = ?`,
+    [column.name],
+    (err, results) => {
+      if (err) {
+        console.error(`Error checking investor_accounts column ${column.name}:`, err.message)
+        ensureInvestorAccountColumnsRecursive(columns, index + 1)
+        return
+      }
+
+      const exists = Number(results[0]?.exists_flag || 0) > 0
+      if (exists) {
+        ensureInvestorAccountColumnsRecursive(columns, index + 1)
+        return
+      }
+
+      db.query(
+        `ALTER TABLE investor_accounts ADD COLUMN ${column.name} ${column.type}`,
+        (alterErr) => {
+          if (alterErr) {
+            console.error(`Error adding investor_accounts column ${column.name}:`, alterErr.message)
+          }
+          ensureInvestorAccountColumnsRecursive(columns, index + 1)
+        }
+      )
+    }
+  )
 }
 
 function runCurrencyAndWithdrawalMigrations() {

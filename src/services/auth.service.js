@@ -8,6 +8,7 @@ const emailService = require('./email.service')
 const currencyService = require('./currency.service')
 const matchTraderService = require('./matchtrader.service')
 const { getNextUserId } = require('../utils/id-generator')
+const { encryptSecret } = require('../utils/encrypted-secret')
 
 function normalizeAccountType(value) {
   const normalized = String(value || '').trim().toLowerCase()
@@ -76,6 +77,146 @@ async function syncMatchTraderPasswordBestEffort(user, password, context = 'auth
     return {
       synced: false,
       error: error.message
+    }
+  }
+}
+
+function getInvestorMatchTraderPasswordKey() {
+  return (
+    process.env.MATCH_TRADER_INVESTOR_PASSWORD_KEY ||
+    process.env.MATCH_TRADER_PASSWORD_ENCRYPTION_KEY ||
+    process.env.JWT_SECRET ||
+    'investor-matchtrader-password'
+  )
+}
+
+function normalizeMatchTraderMode(value) {
+  return String(value || '').trim().toUpperCase() === 'DEMO' ? 'DEMO' : 'REAL'
+}
+
+async function updateInvestorMatchTraderProvisioning(userId, payload = {}) {
+  const normalizedStatus = ['pending', 'success', 'failed'].includes(
+    String(payload.syncStatus || '').toLowerCase()
+  )
+    ? String(payload.syncStatus).toLowerCase()
+    : 'failed'
+
+  try {
+    await db.promise().query(
+      `UPDATE investor_accounts
+       SET match_trader_mode = ?,
+           match_trader_offer_uuid = ?,
+           match_trader_broker_account_uuid = ?,
+           match_trader_trading_account_id = ?,
+           match_trader_password_encrypted = ?,
+           match_trader_password_iv = ?,
+           match_trader_password_available = ?,
+           match_trader_sync_status = ?,
+           match_trader_sync_error = ?,
+           match_trader_synced_at = NOW(),
+           updated_at = NOW()
+       WHERE user_id = ?`,
+      [
+        payload.mode || null,
+        payload.offerUuid || null,
+        payload.brokerAccountUuid || null,
+        payload.tradingAccountId || null,
+        payload.passwordEncrypted || null,
+        payload.passwordIv || null,
+        payload.passwordAvailable ? 1 : 0,
+        normalizedStatus,
+        payload.syncError ? String(payload.syncError).slice(0, 1000) : null,
+        userId
+      ]
+    )
+  } catch (error) {
+    console.warn(
+      `[MatchTrader][investor-provisioning-db-warning] user=${userId || 'unknown'} message=${error.message}`
+    )
+  }
+}
+
+async function provisionInvestorMatchTraderAccountBestEffort(user, context = 'registration') {
+  const offerUuid = String(process.env.MATCH_TRADER_INVESTOR_OFFER_UUID || '').trim()
+  const mode = normalizeMatchTraderMode(process.env.MATCH_TRADER_INVESTOR_ACCOUNT_MODE || 'REAL')
+
+  if (!offerUuid) {
+    const message = 'MATCH_TRADER_INVESTOR_OFFER_UUID is missing'
+    await updateInvestorMatchTraderProvisioning(user.id, {
+      mode,
+      offerUuid: null,
+      syncStatus: 'failed',
+      syncError: message
+    })
+    return { synced: false, skipped: true, reason: 'MISSING_INVESTOR_OFFER_UUID' }
+  }
+
+  try {
+    const provisioning = await matchTraderService.createTradingAccountForUser(user.id, {
+      mode,
+      offer_uuid: offerUuid
+    })
+
+    let generatedPassword = String(provisioning.provider_generated_password || '').trim()
+    if (!generatedPassword) {
+      const fallbackPassword = `Inv#${crypto.randomBytes(16).toString('base64url').slice(0, 12)}1!`
+      try {
+        await matchTraderService.syncPortalPasswordForUser(
+          {
+            id: user.id,
+            email: user.email,
+            first_name: user.first_name,
+            last_name: user.last_name
+          },
+          fallbackPassword,
+          { createIfMissing: true }
+        )
+        generatedPassword = fallbackPassword
+      } catch (passwordSyncError) {
+        console.warn(
+          `[MatchTrader][investor-password-sync-warning] context=${context} user=${user.id || 'unknown'} message=${passwordSyncError.message}`
+        )
+      }
+    }
+    const encryptedPassword = encryptSecret(generatedPassword, getInvestorMatchTraderPasswordKey())
+    const hasPassword = Boolean(encryptedPassword.encrypted)
+    const syncStatus = provisioning.pending ? 'pending' : (hasPassword ? 'success' : 'failed')
+    const syncError = hasPassword
+      ? null
+      : 'Provider password was not returned and fallback sync did not succeed'
+
+    await updateInvestorMatchTraderProvisioning(user.id, {
+      mode: provisioning.mode || mode,
+      offerUuid,
+      brokerAccountUuid: provisioning.broker_account_uuid || null,
+      tradingAccountId: provisioning.trading_account_id || null,
+      passwordEncrypted: encryptedPassword.encrypted,
+      passwordIv: encryptedPassword.iv,
+      passwordAvailable: hasPassword,
+      syncStatus,
+      syncError
+    })
+
+    return {
+      synced: syncStatus === 'success',
+      pending: syncStatus === 'pending',
+      trading_account_id: provisioning.trading_account_id || null
+    }
+  } catch (error) {
+    await updateInvestorMatchTraderProvisioning(user.id, {
+      mode,
+      offerUuid,
+      syncStatus: 'failed',
+      syncError: error.message || 'Investor Match-Trader auto-provisioning failed'
+    })
+
+    console.warn(
+      `[MatchTrader][investor-provisioning-warning] context=${context} user=${user.id || 'unknown'} message=${error.message}`
+    )
+
+    return {
+      synced: false,
+      error: error.message || 'Investor Match-Trader auto-provisioning failed'
     }
   }
 }
@@ -178,8 +319,17 @@ exports.register = async (data) => {
              VALUES (?, ?, 'pending', 0.00, 0.00, 0.00, 0.00)
              ON DUPLICATE KEY UPDATE updated_at = NOW()`,
             [uuidv4(), id],
-            (invErr) => {
+            async (invErr) => {
               if (invErr) return reject(invErr)
+              await provisionInvestorMatchTraderAccountBestEffort(
+                {
+                  id,
+                  email,
+                  first_name: firstName,
+                  last_name: lastName
+                },
+                'register'
+              )
               resolve({
                 success: true,
                 message: 'Account created successfully',
@@ -516,6 +666,15 @@ exports.verifyRegistrationOTP = async (tempToken, otpCode, sessionMeta = {}) => 
          VALUES (?, ?, 'pending', 0.00, 0.00, 0.00, 0.00)
          ON DUPLICATE KEY UPDATE updated_at = NOW()`,
         [uuidv4(), userId]
+      )
+      await provisionInvestorMatchTraderAccountBestEffort(
+        {
+          id: userId,
+          email,
+          first_name: firstName,
+          last_name: lastName
+        },
+        'verify-registration-otp'
       )
     }
 
