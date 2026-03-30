@@ -356,8 +356,219 @@
  *                   department: Compliance
  *                   status: Active
  *                   role: superadmin
+ *                   legacyRole: superadmin
+ *                   permissionRoleId: null
+ *                   permissionRoleName: null
+ *                   effectiveAccessSource: legacy_role
  *                   loginAccessStatus: allowed
  *                   zohoUserId: "1234567890"
+ */
+
+/**
+ * @swagger
+ * /api/admin/users/permission-catalog:
+ *   get:
+ *     tags: [Admin - Users]
+ *     summary: Get available admin permission modules and supported read/write actions
+ *     responses:
+ *       200:
+ *         description: Permission catalog fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 - key: dashboard
+ *                   label: Dashboard
+ *                   description: Admin dashboard visibility and stats access
+ *                   supports:
+ *                     read: true
+ *                     write: false
+ *                 - key: kyc
+ *                   label: KYC
+ *                   description: KYC review, approval, and rejection actions
+ *                   supports:
+ *                     read: true
+ *                     write: true
+ */
+
+/**
+ * @swagger
+ * /api/admin/users/permission-context:
+ *   get:
+ *     tags: [Admin - Users]
+ *     summary: Get the logged-in admin's effective permission context
+ *     responses:
+ *       200:
+ *         description: Permission context fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 adminId: 2cb6d8a7-72a8-4d1a-9a2c-3537db6b1300
+ *                 legacyRole: admin
+ *                 permissionRoleId: 8f4bb4b5-99df-4ab6-a9df-27b6bd01768e
+ *                 permissionRoleName: KYC Manager
+ *                 permissionRoleDescription: Can review KYC and view dashboard
+ *                 source: custom_role
+ *                 permissions:
+ *                   - dashboard.read
+ *                   - kyc.read
+ *                   - kyc.write
+ */
+
+/**
+ * @swagger
+ * /api/admin/users/permission-roles:
+ *   get:
+ *     tags: [Admin - Users]
+ *     summary: List all custom admin permission roles (superadmin only)
+ *     responses:
+ *       200:
+ *         description: Permission roles fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 - id: 8f4bb4b5-99df-4ab6-a9df-27b6bd01768e
+ *                   name: KYC Manager
+ *                   description: Can review KYC and view dashboard
+ *                   is_active: true
+ *                   assignedUserCount: 2
+ *                   permissions:
+ *                     - key: dashboard
+ *                       canRead: true
+ *                       canWrite: false
+ *                     - key: kyc
+ *                       canRead: true
+ *                       canWrite: true
+ *                   permissionTokens:
+ *                     - dashboard.read
+ *                     - kyc.read
+ *                     - kyc.write
+ *       403:
+ *         description: Forbidden for non-superadmin
+ *   post:
+ *     tags: [Admin - Users]
+ *     summary: Create a custom admin permission role (superadmin only)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, permissions]
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: KYC Manager
+ *               description:
+ *                 type: string
+ *                 example: Can review KYC and view dashboard
+ *               permissions:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [key]
+ *                   properties:
+ *                     key:
+ *                       type: string
+ *                       example: kyc
+ *                     read:
+ *                       type: boolean
+ *                       example: true
+ *                     write:
+ *                       type: boolean
+ *                       example: true
+ *     responses:
+ *       201:
+ *         description: Permission role created
+ *       400:
+ *         description: Validation error
+ *       403:
+ *         description: Forbidden for non-superadmin
+ */
+
+/**
+ * @swagger
+ * /api/admin/users/permission-roles/{roleId}:
+ *   patch:
+ *     tags: [Admin - Users]
+ *     summary: Update a custom admin permission role (superadmin only)
+ *     parameters:
+ *       - in: path
+ *         name: roleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               isActive:
+ *                 type: boolean
+ *               permissions:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     key:
+ *                       type: string
+ *                     read:
+ *                       type: boolean
+ *                     write:
+ *                       type: boolean
+ *     responses:
+ *       200:
+ *         description: Permission role updated
+ *       400:
+ *         description: Validation error
+ *       403:
+ *         description: Forbidden for non-superadmin
+ *       404:
+ *         description: Role not found
+ */
+
+/**
+ * @swagger
+ * /api/admin/users/assign-permission-role:
+ *   patch:
+ *     tags: [Admin - Users]
+ *     summary: Assign or remove a custom permission role for an employee (superadmin only)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *               zohoUserId:
+ *                 type: string
+ *               permissionRoleId:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Set null or empty to remove custom role and return to legacy fallback.
+ *             example:
+ *               email: reviewer@example.com
+ *               permissionRoleId: 8f4bb4b5-99df-4ab6-a9df-27b6bd01768e
+ *     responses:
+ *       200:
+ *         description: Permission role assignment updated
+ *       400:
+ *         description: Validation error
+ *       403:
+ *         description: Forbidden for non-superadmin
  */
 
 /**
@@ -365,7 +576,7 @@
  * /api/admin/users/role:
  *   patch:
  *     tags: [Admin - Users]
- *     summary: Update user role (superadmin only)
+ *     summary: Update legacy fallback role (superadmin only)
  *     requestBody:
  *       required: true
  *       content:
