@@ -3,6 +3,6 @@ const router = express.Router()
 const controller = require('../../controllers/admin/dashboard.controller')
 const adminAuth = require('../../middleware/admin-auth.middleware')
 
-router.get('/stats', adminAuth.verifyAdminToken, controller.getDashboardStats)
+router.get('/stats', adminAuth.verifyAdminToken, adminAuth.requirePermissions('dashboard.read'), controller.getDashboardStats)
 
 module.exports = router

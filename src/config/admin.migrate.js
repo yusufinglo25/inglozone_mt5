@@ -52,11 +52,13 @@ async function runAdminMigrations() {
         password_hash VARCHAR(255) NULL,
         department VARCHAR(120),
         role ENUM('superadmin', 'admin', 'accounts') NOT NULL DEFAULT 'accounts',
+        permission_role_id VARCHAR(36) NULL,
         is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_admin_role (role),
-        INDEX idx_admin_email (email)
+        INDEX idx_admin_email (email),
+        INDEX idx_admin_permission_role (permission_role_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 
       `CREATE TABLE IF NOT EXISTS admin_sessions (
@@ -84,12 +86,45 @@ async function runAdminMigrations() {
         zoho_user_id VARCHAR(128) UNIQUE,
         email VARCHAR(255) NOT NULL UNIQUE,
         role ENUM('superadmin', 'admin', 'accounts') NOT NULL DEFAULT 'accounts',
+        permission_role_id VARCHAR(36) NULL,
         updated_by VARCHAR(36),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_user_roles_role (role),
+        INDEX idx_user_roles_permission_role (permission_role_id),
         CONSTRAINT fk_user_roles_updated_by
           FOREIGN KEY (updated_by) REFERENCES admin_users(id) ON DELETE SET NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+      `CREATE TABLE IF NOT EXISTS admin_permission_roles (
+        id VARCHAR(36) PRIMARY KEY,
+        name VARCHAR(120) NOT NULL UNIQUE,
+        description TEXT NULL,
+        is_active BOOLEAN DEFAULT true,
+        created_by VARCHAR(36) NULL,
+        updated_by VARCHAR(36) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_admin_permission_roles_name (name),
+        INDEX idx_admin_permission_roles_active (is_active),
+        CONSTRAINT fk_admin_permission_roles_created_by
+          FOREIGN KEY (created_by) REFERENCES admin_users(id) ON DELETE SET NULL,
+        CONSTRAINT fk_admin_permission_roles_updated_by
+          FOREIGN KEY (updated_by) REFERENCES admin_users(id) ON DELETE SET NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+      `CREATE TABLE IF NOT EXISTS admin_permission_role_permissions (
+        id VARCHAR(36) PRIMARY KEY,
+        role_id VARCHAR(36) NOT NULL,
+        permission_key VARCHAR(120) NOT NULL,
+        can_read BOOLEAN DEFAULT false,
+        can_write BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_admin_permission_role_permission (role_id, permission_key),
+        INDEX idx_admin_permission_role_permissions_key (permission_key),
+        CONSTRAINT fk_admin_permission_role_permissions_role
+          FOREIGN KEY (role_id) REFERENCES admin_permission_roles(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 
       `CREATE TABLE IF NOT EXISTS user_access_control (
@@ -185,6 +220,22 @@ async function runAdminMigrations() {
       await db.promise().query(
         `ALTER TABLE admin_users ADD COLUMN password_hash VARCHAR(255) NULL`
       )
+    }
+
+    const hasAdminPermissionRoleId = await columnExists('admin_users', 'permission_role_id')
+    if (!hasAdminPermissionRoleId) {
+      await db.promise().query(
+        `ALTER TABLE admin_users ADD COLUMN permission_role_id VARCHAR(36) NULL AFTER role`
+      )
+      logAdminMigrate('admin_users.permission_role_id column added')
+    }
+
+    const hasUserRolePermissionRoleId = await columnExists('user_roles', 'permission_role_id')
+    if (!hasUserRolePermissionRoleId) {
+      await db.promise().query(
+        `ALTER TABLE user_roles ADD COLUMN permission_role_id VARCHAR(36) NULL AFTER role`
+      )
+      logAdminMigrate('user_roles.permission_role_id column added')
     }
 
     const hasKycRejectionReason = await columnExists('kyc_records', 'rejection_reason')

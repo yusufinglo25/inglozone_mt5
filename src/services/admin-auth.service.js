@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs')
 const { v4: uuidv4 } = require('uuid')
 const db = require('../config/db')
 const zohoService = require('./zoho.service')
+const adminPermissionService = require('./admin-permission.service')
 
 class AdminAuthService {
   hashToken(token) {
@@ -69,6 +70,13 @@ class AdminAuthService {
         expiresAt
       ]
     )
+    const permissionContext = await adminPermissionService.resolveAdminPermissionContext({
+      id: admin.id,
+      email: admin.email,
+      role: admin.role,
+      permission_role_id: admin.permission_role_id || null,
+      zoho_user_id: admin.zoho_user_id || null
+    })
 
     return {
       token,
@@ -77,7 +85,11 @@ class AdminAuthService {
         email: admin.email,
         fullName: admin.full_name,
         department: admin.department,
-        role: admin.role
+        role: admin.role,
+        permissionRoleId: permissionContext.permissionRoleId,
+        permissionRoleName: permissionContext.permissionRoleName,
+        permissionSource: permissionContext.source,
+        permissions: permissionContext.permissions
       }
     }
   }
@@ -244,17 +256,33 @@ class AdminAuthService {
   }
 
   async validateSession(token, decoded) {
-    const [rows] = await db.promise().query(
-      `SELECT s.*, a.email, a.role, a.is_active, a.full_name, a.department, a.zoho_user_id
-       FROM admin_sessions s
-       JOIN admin_users a ON a.id = s.admin_user_id
-       WHERE s.jwt_id = ?
-         AND s.session_token_hash = ?
-         AND s.revoked_at IS NULL
-         AND s.expires_at > NOW()
-       LIMIT 1`,
-      [decoded.jti, this.hashToken(token)]
-    )
+    let rows
+    try {
+      ;([rows] = await db.promise().query(
+        `SELECT s.*, a.email, a.role, a.permission_role_id, a.is_active, a.full_name, a.department, a.zoho_user_id
+         FROM admin_sessions s
+         JOIN admin_users a ON a.id = s.admin_user_id
+         WHERE s.jwt_id = ?
+           AND s.session_token_hash = ?
+           AND s.revoked_at IS NULL
+           AND s.expires_at > NOW()
+         LIMIT 1`,
+        [decoded.jti, this.hashToken(token)]
+      ))
+    } catch (error) {
+      if (String(error?.code || '') !== 'ER_BAD_FIELD_ERROR') throw error
+      ;([rows] = await db.promise().query(
+        `SELECT s.*, a.email, a.role, a.is_active, a.full_name, a.department, a.zoho_user_id
+         FROM admin_sessions s
+         JOIN admin_users a ON a.id = s.admin_user_id
+         WHERE s.jwt_id = ?
+           AND s.session_token_hash = ?
+           AND s.revoked_at IS NULL
+           AND s.expires_at > NOW()
+         LIMIT 1`,
+        [decoded.jti, this.hashToken(token)]
+      ))
+    }
 
     const session = rows[0]
     if (!session) {
