@@ -127,6 +127,20 @@ async function runAdminMigrations() {
           FOREIGN KEY (role_id) REFERENCES admin_permission_roles(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 
+      `CREATE TABLE IF NOT EXISTS matchtrader_customer_offer_visibility (
+        offer_uuid VARCHAR(128) PRIMARY KEY,
+        is_visible BOOLEAN NOT NULL DEFAULT true,
+        created_by VARCHAR(36) NULL,
+        updated_by VARCHAR(36) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_matchtrader_customer_offer_visibility_visible (is_visible),
+        CONSTRAINT fk_matchtrader_customer_offer_visibility_created_by
+          FOREIGN KEY (created_by) REFERENCES admin_users(id) ON DELETE SET NULL,
+        CONSTRAINT fk_matchtrader_customer_offer_visibility_updated_by
+          FOREIGN KEY (updated_by) REFERENCES admin_users(id) ON DELETE SET NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
       `CREATE TABLE IF NOT EXISTS user_access_control (
         id VARCHAR(36) PRIMARY KEY,
         zoho_user_id VARCHAR(128) UNIQUE,

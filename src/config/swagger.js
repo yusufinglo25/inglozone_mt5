@@ -325,6 +325,7 @@ const MANUALLY_DOCUMENTED_OPERATIONS = new Set([
   'POST /api/matchtrader/customer/create-account',
   'GET /api/matchtrader/customer/accounts',
   'GET /api/matchtrader/customer/offers',
+  'GET /api/matchtrader/customer/offer-groups',
   'POST /api/matchtrader/customer/change-password',
   'GET /api/matchtrader/customer/orders',
   'GET /api/matchtrader/customer/open-positions',
@@ -335,7 +336,9 @@ const MANUALLY_DOCUMENTED_OPERATIONS = new Set([
   'GET /api/matchtrader/customer/trade-access',
   'GET /api/matchtrader/admin/accounts',
   'GET /api/matchtrader/admin/orders',
-  'GET /api/matchtrader/admin/user/{user_id}'
+  'GET /api/matchtrader/admin/user/{user_id}',
+  'GET /api/matchtrader/admin/offers/catalog',
+  'PUT /api/matchtrader/admin/offers/customer-visibility'
 ])
 
 function buildAutoPathDocs() {

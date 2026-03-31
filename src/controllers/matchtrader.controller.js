@@ -52,8 +52,21 @@ exports.getCustomerAccounts = async (req, res) => {
 
 exports.getCustomerOffers = async (req, res) => {
   try {
-    const offers = await matchTraderService.listOffers(req.query || {})
+    const offers = await matchTraderService.listCustomerVisibleOffers(req.query || {})
     return sendSuccess(res, offers, { count: offers.length })
+  } catch (error) {
+    return sendError(res, error)
+  }
+}
+
+exports.getCustomerOfferGroups = async (req, res) => {
+  try {
+    const groups = await matchTraderService.listCustomerOfferGroups(req.query || {})
+    const offerCount = groups.reduce((sum, group) => sum + Number(group.offer_count || 0), 0)
+    return sendSuccess(res, groups, {
+      count: groups.length,
+      offer_count: offerCount
+    })
   } catch (error) {
     return sendError(res, error)
   }
@@ -160,6 +173,38 @@ exports.getAdminUserDetails = async (req, res) => {
     const userId = req.params.user_id
     const data = await matchTraderService.getAdminUserDetails(userId, req.query || {})
     return sendSuccess(res, data)
+  } catch (error) {
+    return sendError(res, error)
+  }
+}
+
+exports.getAdminOfferCatalog = async (req, res) => {
+  try {
+    const data = await matchTraderService.getAdminOfferCatalog(req.query || {})
+    return sendSuccess(res, data, {
+      count: Array.isArray(data.offers) ? data.offers.length : 0,
+      selected_count: Array.isArray(data.selected_offer_uuids) ? data.selected_offer_uuids.length : 0
+    })
+  } catch (error) {
+    return sendError(res, error)
+  }
+}
+
+exports.updateAdminCustomerVisibleOffers = async (req, res) => {
+  try {
+    const offerUuids = Array.isArray(req.body?.offer_uuids)
+      ? req.body.offer_uuids
+      : (Array.isArray(req.body?.offerUuids) ? req.body.offerUuids : [])
+
+    const data = await matchTraderService.updateCustomerVisibleOffers(
+      offerUuids,
+      req.admin?.id || null
+    )
+
+    return sendSuccess(res, data, {
+      count: Array.isArray(data.offers) ? data.offers.length : 0,
+      selected_count: Array.isArray(data.selected_offer_uuids) ? data.selected_offer_uuids.length : 0
+    })
   } catch (error) {
     return sendError(res, error)
   }

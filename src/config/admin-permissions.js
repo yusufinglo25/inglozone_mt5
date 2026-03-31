@@ -46,6 +46,12 @@ const ADMIN_PERMISSION_MODULES = [
     label: 'Investor Performance',
     description: 'Investor balance, equity, and profit/loss updates',
     supports: { read: true, write: true }
+  },
+  {
+    key: 'matchtrader_offers',
+    label: 'Match-Trader Offers',
+    description: 'Customer-visible Match-Trader offer catalog and leverage package management',
+    supports: { read: true, write: true }
   }
 ]
 
@@ -69,7 +75,9 @@ const LEGACY_ROLE_PERMISSION_MAP = {
     'investor_accounts.write',
     'investor_transactions.read',
     'investor_performance.read',
-    'investor_performance.write'
+    'investor_performance.write',
+    'matchtrader_offers.read',
+    'matchtrader_offers.write'
   ],
   accounts: [
     'dashboard.read',
@@ -78,7 +86,8 @@ const LEGACY_ROLE_PERMISSION_MAP = {
     'investor_accounts.read',
     'investor_transactions.read',
     'investor_performance.read',
-    'investor_performance.write'
+    'investor_performance.write',
+    'matchtrader_offers.read'
   ]
 }
 

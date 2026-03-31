@@ -2239,7 +2239,7 @@
  * /api/matchtrader/customer/create-account:
  *   post:
  *     tags: [MatchTrader Customer]
- *     summary: Create customer trading account (REAL or DEMO)
+ *     summary: Create customer trading account from an admin-enabled Match-Trader offer (REAL or DEMO)
  *     requestBody:
  *       required: true
  *       content:
@@ -2251,17 +2251,15 @@
  *               offer_uuid:
  *                 type: string
  *                 example: 11111111-2222-3333-4444-555555555555
- *                 description: Offer UUID selected from GET /api/matchtrader/customer/offers.
+ *                 description: Offer UUID selected from GET /api/matchtrader/customer/offers or GET /api/matchtrader/customer/offer-groups.
  *               mode:
  *                 type: string
  *                 enum: [REAL, DEMO]
  *                 example: REAL
- *               leverage:
- *                 type: string
- *                 example: "1:100"
  *               currency:
  *                 type: string
  *                 example: USD
+ *                 description: Optional. Some broker setups require explicit currency; leverage always follows the selected offer.
  *               commission_uuid:
  *                 type: string
  *                 example: 22222222-3333-4444-5555-666666666666
@@ -2284,6 +2282,11 @@
  *                 provider_password_returned: false
  *                 provider_generated_password: null
  *                 password_note: Use POST /api/matchtrader/customer/change-password to set or reset platform password.
+ *                 selected_offer:
+ *                   offer_uuid: 11111111-2222-3333-4444-555555555555
+ *                   offer_name: Standard 1:100
+ *                   package_name: Standard
+ *                   leverage_label: "1:100"
  *                 provider:
  *                   login: "1000123"
  *                   status: ACTIVE
@@ -2302,9 +2305,11 @@
  *                 message: Trading account request submitted and awaits broker confirmation.
  *                 selected_offer:
  *                   offer_uuid: 21f85522-c043-4ed5-ae99-d4c28a316b57
+ *                   package_name: Standard
+ *                   leverage_label: "1:200"
  *                   trading_account_auto_creation: false
  *       400:
- *         description: Validation error
+ *         description: Validation error or the selected offer is not enabled for customers
  *       422:
  *         description: Provider rejected account creation (offer/business-rule mismatch)
  *       401:
@@ -2345,7 +2350,7 @@
  * /api/matchtrader/customer/offers:
  *   get:
  *     tags: [MatchTrader Customer]
- *     summary: Get available Match-Trader account offers (use for account types like Standard/Pro/Raw/Zero)
+ *     summary: Get customer-visible Match-Trader offers selected in the admin panel
  *     parameters:
  *       - in: query
  *         name: mode
@@ -2353,13 +2358,7 @@
  *         schema:
  *           type: string
  *           enum: [REAL, DEMO]
- *         description: Optional filter by account mode.
- *       - in: query
- *         name: include_hidden
- *         required: false
- *         schema:
- *           type: boolean
- *         description: Include hidden offers.
+ *         description: Optional filter by account mode. Hidden CRM offers can still appear here if admin selected them.
  *       - in: query
  *         name: instant_only
  *         required: false
@@ -2375,10 +2374,12 @@
  *               success: true
  *               data:
  *                 - offer_uuid: f6cbaca3-cc96-4275-a784-12659032b544
- *                   offer_name: Standard
+ *                   offer_name: Standard 1:100
+ *                   package_name: Standard
  *                   demo: false
  *                   currency: USD
  *                   leverage: "100"
+ *                   leverage_label: "1:100"
  *                   hidden: false
  *                   description: Standard account
  *                   verification_required: false
@@ -2386,6 +2387,58 @@
  *                   initial_deposit: 50
  *               meta:
  *                 count: 1
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/customer/offer-groups:
+ *   get:
+ *     tags: [MatchTrader Customer]
+ *     summary: Get customer-visible Match-Trader offers grouped by package name with leverage choices
+ *     parameters:
+ *       - in: query
+ *         name: mode
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [REAL, DEMO]
+ *         description: Optional filter by account mode.
+ *       - in: query
+ *         name: instant_only
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *         description: Return only leverage options whose underlying offer supports automatic account creation.
+ *     responses:
+ *       200:
+ *         description: Grouped offers fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 - package_name: Standard
+ *                   offer_count: 2
+ *                   leverage_options:
+ *                     - offer_uuid: f6cbaca3-cc96-4275-a784-12659032b544
+ *                       offer_name: Standard 1:100
+ *                       leverage: "100"
+ *                       leverage_label: "1:100"
+ *                       currency: USD
+ *                       demo: false
+ *                       trading_account_auto_creation: true
+ *                     - offer_uuid: 6a86f7cd-a988-4ab4-bcaa-223456789000
+ *                       offer_name: Standard 1:200
+ *                       leverage: "200"
+ *                       leverage_label: "1:200"
+ *                       currency: USD
+ *                       demo: false
+ *                       trading_account_auto_creation: true
+ *               meta:
+ *                 count: 1
+ *                 offer_count: 2
  *       401:
  *         description: Unauthorized
  */
@@ -2825,6 +2878,107 @@
  *         description: Unauthorized
  *       403:
  *         description: SSO token request rejected (missing API permission or IP not whitelisted)
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/admin/offers/catalog:
+ *   get:
+ *     tags: [MatchTrader Admin]
+ *     summary: Get all Match-Trader CRM offers with admin selection state and package grouping
+ *     parameters:
+ *       - in: query
+ *         name: mode
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [REAL, DEMO]
+ *         description: Optional filter by account mode.
+ *     responses:
+ *       200:
+ *         description: Offer catalog fetched
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 offers:
+ *                   - offer_uuid: f6cbaca3-cc96-4275-a784-12659032b544
+ *                     offer_name: Standard 1:100
+ *                     package_name: Standard
+ *                     leverage_label: "1:100"
+ *                     currency: USD
+ *                     demo: false
+ *                     selected_for_customers: true
+ *                   - offer_uuid: 6a86f7cd-a988-4ab4-bcaa-223456789000
+ *                     offer_name: Standard 1:200
+ *                     package_name: Standard
+ *                     leverage_label: "1:200"
+ *                     currency: USD
+ *                     demo: false
+ *                     selected_for_customers: false
+ *                 groups:
+ *                   - package_name: Standard
+ *                     offer_count: 2
+ *                     leverage_options:
+ *                       - offer_uuid: f6cbaca3-cc96-4275-a784-12659032b544
+ *                         selected_for_customers: true
+ *                       - offer_uuid: 6a86f7cd-a988-4ab4-bcaa-223456789000
+ *                         selected_for_customers: false
+ *                 selected_offer_uuids:
+ *                   - f6cbaca3-cc96-4275-a784-12659032b544
+ *               meta:
+ *                 count: 2
+ *                 selected_count: 1
+ *       401:
+ *         description: Unauthorized admin token
+ *       403:
+ *         description: Missing matchtrader_offers.read permission
+ */
+
+/**
+ * @swagger
+ * /api/matchtrader/admin/offers/customer-visibility:
+ *   put:
+ *     tags: [MatchTrader Admin]
+ *     summary: Replace the customer-visible Match-Trader offer selection from admin panel
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [offer_uuids]
+ *             properties:
+ *               offer_uuids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example:
+ *                   - f6cbaca3-cc96-4275-a784-12659032b544
+ *                   - 6a86f7cd-a988-4ab4-bcaa-223456789000
+ *                 description: Raw Match-Trader offer UUIDs that should be visible to customers.
+ *     responses:
+ *       200:
+ *         description: Customer-visible offers updated
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 selected_offer_uuids:
+ *                   - f6cbaca3-cc96-4275-a784-12659032b544
+ *                   - 6a86f7cd-a988-4ab4-bcaa-223456789000
+ *               meta:
+ *                 selected_count: 2
+ *       400:
+ *         description: One or more offer UUIDs do not exist in Match-Trader
+ *       401:
+ *         description: Unauthorized admin token
+ *       403:
+ *         description: Missing matchtrader_offers.write permission
+ *       503:
+ *         description: Offer visibility migration table is not ready yet
  */
 
 /**

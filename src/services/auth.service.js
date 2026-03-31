@@ -155,6 +155,8 @@ async function provisionInvestorMatchTraderAccountBestEffort(user, context = 're
     const provisioning = await matchTraderService.createTradingAccountForUser(user.id, {
       mode,
       offer_uuid: offerUuid
+    }, {
+      allowUnlistedOffer: true
     })
 
     let generatedPassword = String(provisioning.provider_generated_password || '').trim()

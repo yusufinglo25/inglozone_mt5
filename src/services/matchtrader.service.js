@@ -2,6 +2,10 @@ const crypto = require('crypto')
 const db = require('../config/db')
 const { MatchTraderClient, MatchTraderApiError } = require('./matchtrader.client')
 
+function isSchemaNotReadyError(error) {
+  return ['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR'].includes(String(error?.code || ''))
+}
+
 class MatchTraderService {
   constructor(options = {}) {
     this.client = options.client || new MatchTraderClient()
@@ -137,6 +141,58 @@ class MatchTraderService {
     const matched = compact.match(/^(?:1:)?(\d+)$/i)
     if (matched) return matched[1]
     return raw
+  }
+
+  formatLeverageLabel(value) {
+    const normalized = this.normalizeLeverageValue(value)
+    if (!normalized) return ''
+    if (/^\d+$/.test(normalized)) {
+      return `1:${normalized}`
+    }
+    return normalized
+  }
+
+  extractOfferPackageName(offerName, leverageValue) {
+    const normalizedName = this.pickFirstString([offerName])
+    if (!normalizedName) return ''
+
+    const leverageLabel = this.formatLeverageLabel(leverageValue)
+    if (leverageLabel) {
+      const numericLeverage = leverageLabel.replace(/^1:/i, '')
+      const suffixPatterns = [
+        new RegExp(`\\s+${this.escapeRegExp(leverageLabel)}$`, 'i'),
+        /^\d+$/.test(numericLeverage)
+          ? new RegExp(`\\s+${this.escapeRegExp(numericLeverage)}$`, 'i')
+          : null
+      ].filter(Boolean)
+
+      for (const pattern of suffixPatterns) {
+        const stripped = normalizedName.replace(pattern, '').trim()
+        if (stripped) return stripped
+      }
+    }
+
+    const generic = normalizedName.match(/^(.*?)(?:\s+(?:1:\d+|\d{2,6}))$/i)
+    if (generic && generic[1] && generic[1].trim()) {
+      return generic[1].trim()
+    }
+
+    return normalizedName
+  }
+
+  escapeRegExp(value) {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+
+  enrichOfferPresentation(offer = {}) {
+    const leverageLabel = this.formatLeverageLabel(offer.leverage)
+    const packageName = this.extractOfferPackageName(offer.offer_name, offer.leverage)
+
+    return {
+      ...offer,
+      package_name: packageName || offer.offer_name || null,
+      leverage_label: leverageLabel || null
+    }
   }
 
   normalizeCurrencyValue(value) {
@@ -455,11 +511,14 @@ class MatchTraderService {
   buildTradingAccountCreateVariants({
     offerUuid,
     selectedOffer,
-    body = {}
+    body = {},
+    allowRequestedLeverage = false
   }) {
     const commissionUuid = this.pickFirstString([body.commission_uuid, body.commissionUuid])
     const requestedCurrency = this.normalizeCurrencyValue(body.currency)
-    const requestedLeverage = this.normalizeLeverageValue(body.leverage)
+    const requestedLeverage = allowRequestedLeverage
+      ? this.normalizeLeverageValue(body.leverage)
+      : ''
     const offerCurrency = this.normalizeCurrencyValue(selectedOffer && selectedOffer.currency)
     const offerLeverage = this.normalizeLeverageValue(selectedOffer && selectedOffer.leverage)
     const preferredCurrency = requestedCurrency || offerCurrency
@@ -1076,7 +1135,7 @@ class MatchTraderService {
   }
 
   mapOffer(offer = {}) {
-    return {
+    return this.enrichOfferPresentation({
       offer_uuid: String(offer.uuid || offer.offerUuid || offer.id || '').trim(),
       offer_name: offer.name || offer.groupName || null,
       demo: Boolean(offer.demo),
@@ -1089,7 +1148,7 @@ class MatchTraderService {
       initial_deposit: offer.initialDeposit !== undefined && offer.initialDeposit !== null
         ? this.toSafeNumber(offer.initialDeposit)
         : null
-    }
+    })
   }
 
   async listOffers(query = {}) {
@@ -1107,6 +1166,223 @@ class MatchTraderService {
       if (mode === 'REAL' && offer.demo) return false
       return true
     })
+  }
+
+  async listCustomerVisibleOfferRecords() {
+    try {
+      return await this.query(
+        `SELECT offer_uuid, is_visible, created_by, updated_by, created_at, updated_at
+         FROM matchtrader_customer_offer_visibility
+         WHERE is_visible = 1`
+      )
+    } catch (error) {
+      if (isSchemaNotReadyError(error)) {
+        return []
+      }
+      throw error
+    }
+  }
+
+  async getCustomerVisibleOfferUuidSet() {
+    const rows = await this.listCustomerVisibleOfferRecords()
+    return new Set(
+      rows
+        .map((row) => String(row.offer_uuid || '').trim())
+        .filter(Boolean)
+    )
+  }
+
+  async listCustomerVisibleOffers(query = {}) {
+    const selectedOfferUuids = await this.getCustomerVisibleOfferUuidSet()
+    if (!selectedOfferUuids.size) {
+      return []
+    }
+
+    const offers = await this.listOffers({
+      ...query,
+      include_hidden: true
+    })
+
+    return offers.filter((offer) => selectedOfferUuids.has(offer.offer_uuid))
+  }
+
+  sortOfferOptions(offers = []) {
+    return [...offers].sort((a, b) => {
+      const leverageA = Number.parseInt(this.normalizeLeverageValue(a.leverage_label || a.leverage), 10)
+      const leverageB = Number.parseInt(this.normalizeLeverageValue(b.leverage_label || b.leverage), 10)
+
+      const hasLeverageA = Number.isFinite(leverageA)
+      const hasLeverageB = Number.isFinite(leverageB)
+      if (hasLeverageA && hasLeverageB && leverageA !== leverageB) {
+        return leverageA - leverageB
+      }
+      if (hasLeverageA && !hasLeverageB) return -1
+      if (!hasLeverageA && hasLeverageB) return 1
+
+      return String(a.offer_name || '').localeCompare(String(b.offer_name || ''))
+    })
+  }
+
+  groupOffersByPackage(offers = []) {
+    const groups = new Map()
+
+    for (const offer of offers) {
+      const packageName = this.pickFirstString([offer.package_name, offer.offer_name]) || 'Offer'
+      if (!groups.has(packageName)) {
+        groups.set(packageName, {
+          package_name: packageName,
+          offer_count: 0,
+          leverage_options: []
+        })
+      }
+
+      const group = groups.get(packageName)
+      group.leverage_options.push({
+        offer_uuid: offer.offer_uuid,
+        offer_name: offer.offer_name,
+        leverage: offer.leverage,
+        leverage_label: offer.leverage_label,
+        currency: offer.currency,
+        demo: Boolean(offer.demo),
+        description: offer.description,
+        verification_required: Boolean(offer.verification_required),
+        trading_account_auto_creation: Boolean(offer.trading_account_auto_creation),
+        initial_deposit: offer.initial_deposit,
+        hidden: Boolean(offer.hidden),
+        selected_for_customers: offer.selected_for_customers !== undefined
+          ? Boolean(offer.selected_for_customers)
+          : undefined
+      })
+      group.offer_count += 1
+    }
+
+    return [...groups.values()]
+      .map((group) => ({
+        ...group,
+        leverage_options: this.sortOfferOptions(group.leverage_options)
+      }))
+      .sort((a, b) => a.package_name.localeCompare(b.package_name))
+  }
+
+  async getAdminOfferCatalog(query = {}) {
+    const offers = await this.listOffers({
+      ...query,
+      include_hidden: true
+    })
+    const selectedOfferUuids = await this.getCustomerVisibleOfferUuidSet()
+
+    const catalog = offers.map((offer) => ({
+      ...offer,
+      selected_for_customers: selectedOfferUuids.has(offer.offer_uuid)
+    }))
+
+    const sortedOffers = [...catalog].sort((a, b) => {
+      const packageComparison = String(a.package_name || '').localeCompare(String(b.package_name || ''))
+      if (packageComparison !== 0) return packageComparison
+
+      const leverageA = Number.parseInt(this.normalizeLeverageValue(a.leverage_label || a.leverage), 10)
+      const leverageB = Number.parseInt(this.normalizeLeverageValue(b.leverage_label || b.leverage), 10)
+      const hasLeverageA = Number.isFinite(leverageA)
+      const hasLeverageB = Number.isFinite(leverageB)
+
+      if (hasLeverageA && hasLeverageB && leverageA !== leverageB) {
+        return leverageA - leverageB
+      }
+      if (hasLeverageA && !hasLeverageB) return -1
+      if (!hasLeverageA && hasLeverageB) return 1
+
+      return String(a.offer_name || '').localeCompare(String(b.offer_name || ''))
+    })
+
+    return {
+      offers: sortedOffers,
+      groups: this.groupOffersByPackage(catalog),
+      selected_offer_uuids: [...selectedOfferUuids]
+    }
+  }
+
+  async updateCustomerVisibleOffers(offerUuids = [], adminUserId = null) {
+    const normalizedOfferUuids = Array.from(new Set(
+      (Array.isArray(offerUuids) ? offerUuids : [])
+        .map((offerUuid) => String(offerUuid || '').trim())
+        .filter(Boolean)
+    ))
+
+    const providerOffers = await this.listOffers({ include_hidden: true })
+    const providerOfferMap = new Map(providerOffers.map((offer) => [offer.offer_uuid, offer]))
+    const invalidOfferUuids = normalizedOfferUuids.filter((offerUuid) => !providerOfferMap.has(offerUuid))
+
+    if (invalidOfferUuids.length > 0) {
+      throw new MatchTraderApiError('One or more selected offer UUIDs do not exist in Match-Trader', {
+        statusCode: 400,
+        code: 'INVALID_OFFER_SELECTION',
+        providerError: {
+          invalid_offer_uuids: invalidOfferUuids
+        }
+      })
+    }
+
+    const connection = await db.promise().getConnection()
+    try {
+      await connection.beginTransaction()
+      await connection.query('DELETE FROM matchtrader_customer_offer_visibility')
+
+      for (const offerUuid of normalizedOfferUuids) {
+        await connection.query(
+          `INSERT INTO matchtrader_customer_offer_visibility
+           (offer_uuid, is_visible, created_by, updated_by)
+           VALUES (?, 1, ?, ?)`,
+          [offerUuid, adminUserId || null, adminUserId || null]
+        )
+      }
+
+      await connection.commit()
+    } catch (error) {
+      try {
+        await connection.rollback()
+      } catch (rollbackError) {
+        // Ignore rollback errors and surface the root cause below.
+      }
+      if (isSchemaNotReadyError(error)) {
+        throw new MatchTraderApiError(
+          'Match-Trader offer visibility table is not ready yet. Restart the backend to run the latest migration.',
+          {
+            statusCode: 503,
+            code: 'MATCH_TRADER_OFFER_VISIBILITY_SCHEMA_NOT_READY'
+          }
+        )
+      }
+      throw error
+    } finally {
+      connection.release()
+    }
+
+    return this.getAdminOfferCatalog()
+  }
+
+  async listCustomerOfferGroups(query = {}) {
+    const offers = await this.listCustomerVisibleOffers(query)
+    return this.groupOffersByPackage(offers)
+  }
+
+  async resolveCustomerVisibleOfferForMode(mode, preferredOfferUuid = '') {
+    const selected = await this.resolveOfferForMode(mode, preferredOfferUuid)
+    const selectedOfferUuids = await this.getCustomerVisibleOfferUuidSet()
+
+    if (!selectedOfferUuids.has(selected.offer_uuid)) {
+      throw new MatchTraderApiError(
+        'Selected offer is not enabled for customers in the admin panel',
+        {
+          statusCode: 400,
+          code: 'OFFER_NOT_CUSTOMER_VISIBLE',
+          providerError: {
+            selected_offer: selected
+          }
+        }
+      )
+    }
+
+    return selected
   }
 
   async resolveOfferForMode(mode, preferredOfferUuid = '') {
@@ -1143,7 +1419,7 @@ class MatchTraderService {
     return visible || matchingByMode[0]
   }
 
-  async createTradingAccountForUser(userId, body = {}) {
+  async createTradingAccountForUser(userId, body = {}, options = {}) {
     const user = await this.getUserById(userId)
     const passwordNote = 'Use POST /api/matchtrader/customer/change-password to set or reset platform password.'
     const mode = this.normalizeMode(body.mode || body.account_mode)
@@ -1155,7 +1431,9 @@ class MatchTraderService {
       })
     }
 
-    const selectedOffer = await this.resolveOfferForMode(mode, requestedOfferUuid)
+    const selectedOffer = options.allowUnlistedOffer
+      ? await this.resolveOfferForMode(mode, requestedOfferUuid)
+      : await this.resolveCustomerVisibleOfferForMode(mode, requestedOfferUuid)
     const offerUuid = selectedOffer.offer_uuid
     if (!selectedOffer.trading_account_auto_creation) {
       throw new MatchTraderApiError(
@@ -1179,7 +1457,8 @@ class MatchTraderService {
     const createVariants = this.buildTradingAccountCreateVariants({
       offerUuid,
       selectedOffer,
-      body
+      body,
+      allowRequestedLeverage: Boolean(options.allowRequestedLeverage)
     })
 
     const tryCreateTradingAccount = async (brokerAccountUuid) => {
@@ -1355,8 +1634,8 @@ class MatchTraderService {
       tradingAccountId,
       mode,
       type: selectedOffer.offer_name || offerUuid,
-      currency: created.currency || body.currency || null,
-      leverage: created.leverage || body.leverage || null,
+      currency: created.currency || selectedOffer.currency || body.currency || null,
+      leverage: created.leverage || selectedOffer.leverage || null,
       status: created.status || 'ACTIVE'
     })
 
