@@ -1,30 +1,8 @@
 const express = require('express')
 const router = express.Router()
-const Stripe = require('stripe')
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
 const db = require('../config/db')
 const walletService = require('../services/wallet.service')
-
-let stripeClient
-
-const getStripeClient = () => {
-  if (!process.env.STRIPE_SECRET_KEY) {
-    const error = new Error('Stripe webhook is not configured')
-    error.statusCode = 503
-    throw error
-  }
-
-  if (!process.env.STRIPE_WEBHOOK_SECRET) {
-    const error = new Error('STRIPE_WEBHOOK_SECRET is not configured')
-    error.statusCode = 503
-    throw error
-  }
-
-  if (!stripeClient) {
-    stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY)
-  }
-
-  return stripeClient
-}
 
 // Stripe webhook endpoint
 router.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -32,7 +10,6 @@ router.post('/stripe-webhook', express.raw({ type: 'application/json' }), async 
   let event
 
   try {
-    const stripe = getStripeClient()
     event = stripe.webhooks.constructEvent(
       req.body,
       sig,
@@ -40,8 +17,7 @@ router.post('/stripe-webhook', express.raw({ type: 'application/json' }), async 
     )
   } catch (err) {
     console.error('Webhook signature verification failed:', err.message)
-    const statusCode = Number.isInteger(err.statusCode) ? err.statusCode : 400
-    return res.status(statusCode).send(`Webhook Error: ${err.message}`)
+    return res.status(400).send(`Webhook Error: ${err.message}`)
   }
 
   console.log('Webhook received:', event.type)
