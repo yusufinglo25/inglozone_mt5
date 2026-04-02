@@ -1,6 +1,6 @@
 const db = require('../config/db')
 const { v4: uuidv4 } = require('uuid')
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
+const Stripe = require('stripe')
 const jwt = require('jsonwebtoken')
 const crypto = require('crypto')
 const path = require('path')
@@ -16,6 +16,21 @@ class WalletService {
   constructor() {
     this.bankTransferUploadPath = process.env.BANK_TRANSFER_UPLOAD_PATH || './uploads/bank-transfer'
     this.ensureUploadDirectory()
+  }
+
+  getStripeClient() {
+    const secretKey = process.env.STRIPE_SECRET_KEY
+    if (!secretKey) {
+      const error = new Error('Stripe is not configured')
+      error.statusCode = 503
+      throw error
+    }
+
+    if (!this.stripeClient) {
+      this.stripeClient = new Stripe(secretKey)
+    }
+
+    return this.stripeClient
   }
 
   async ensureUploadDirectory() {
@@ -392,6 +407,8 @@ class WalletService {
       )
     })
 
+    const stripe = this.getStripeClient()
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [{
@@ -441,6 +458,7 @@ class WalletService {
   async verifyDeposit(sessionId) {
     try {
       // Retrieve session from Stripe
+      const stripe = this.getStripeClient()
       const session = await stripe.checkout.sessions.retrieve(sessionId, {
         expand: ['payment_intent']
       })

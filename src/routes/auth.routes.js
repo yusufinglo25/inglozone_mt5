@@ -5,6 +5,16 @@ const passport = require('passport')
 const authService = require('../services/auth.service')
 const jwt = require('jsonwebtoken')
 
+const requireGoogleAuthConfigured = (req, res, next) => {
+  if (passport.isGoogleAuthConfigured) {
+    return next()
+  }
+
+  return res.status(503).json({
+    error: 'Google OAuth is not configured'
+  })
+}
+
 // OLD ROUTES (if you want to keep direct registration)
 router.post('/register', controller.register) // Direct registration (optional)
 
@@ -23,10 +33,12 @@ router.post('/check-email', controller.checkEmail)
 router.post('/complete-profile', controller.completeProfile)
 
 router.get('/google',
+  requireGoogleAuthConfigured,
   passport.authenticate('google', { scope: ['profile', 'email'] })
 )
 
 router.get('/google/callback',
+  requireGoogleAuthConfigured,
   passport.authenticate('google', { session: false }),
   async (req, res) => {
     try {
