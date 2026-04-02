@@ -428,23 +428,63 @@ function getSwaggerSpec() {
           get: {
             tags: ['Health'],
             summary: 'Health check endpoint',
+            description: 'Monitoring-friendly health endpoint for uptime probes and Prometheus blackbox exporter.',
             security: [],
             responses: {
               200: {
-                description: 'Server is healthy',
+                description: 'Application and database are healthy',
                 content: {
                   'application/json': {
                     schema: {
                       type: 'object',
+                      required: ['status', 'uptime', 'timestamp', 'database'],
                       properties: {
                         status: { type: 'string', example: 'ok' },
-                        timestamp: { type: 'string', format: 'date-time' }
+                        uptime: { type: 'number', example: 1234.567 },
+                        timestamp: { type: 'string', format: 'date-time' },
+                        database: { type: 'string', example: 'connected' }
+                      }
+                    },
+                    examples: {
+                      healthy: {
+                        value: {
+                          status: 'ok',
+                          uptime: 1234.567,
+                          timestamp: '2026-04-02T11:30:00.000Z',
+                          database: 'connected'
+                        }
                       }
                     }
                   }
                 }
               },
-              500: getDefaultJsonResponses()['500']
+              503: {
+                description: 'Application is running but the database health check failed',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      required: ['status', 'uptime', 'timestamp', 'database'],
+                      properties: {
+                        status: { type: 'string', example: 'error' },
+                        uptime: { type: 'number', example: 1234.567 },
+                        timestamp: { type: 'string', format: 'date-time' },
+                        database: { type: 'string', example: 'disconnected' }
+                      }
+                    },
+                    examples: {
+                      unhealthy: {
+                        value: {
+                          status: 'error',
+                          uptime: 1234.567,
+                          timestamp: '2026-04-02T11:30:00.000Z',
+                          database: 'disconnected'
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         },

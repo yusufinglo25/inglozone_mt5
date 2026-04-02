@@ -3,10 +3,98 @@ const express = require('express')
 const cors = require('cors')
 const path = require('path')
 const fs = require('fs')
+const { PrismaClient } = require('@prisma/client')
+const { PrismaMariaDb } = require('@prisma/adapter-mariadb')
 const { swaggerUi, getSwaggerSpec } = require('./src/config/swagger')
 const jwt = require('jsonwebtoken')
 
 const app = express()
+
+const HEALTH_CACHE_TTL_MS = 5000
+const HEALTH_DB_TIMEOUT_MS = 80
+
+const healthState = {
+  checkedAt: 0,
+  isConnected: false,
+  inFlightCheck: null
+}
+
+let prismaHealthClient = null
+
+function getHealthPrismaClient() {
+  if (prismaHealthClient) {
+    return prismaHealthClient
+  }
+
+  const adapter = new PrismaMariaDb({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS || '',
+    database: process.env.DB_NAME,
+    port: process.env.DB_PORT ? Number(process.env.DB_PORT) : undefined,
+    connectionLimit: Number(process.env.HEALTH_DB_CONNECTION_LIMIT || 2),
+    acquireTimeout: Number(process.env.HEALTH_DB_ACQUIRE_TIMEOUT_MS || 100),
+    connectTimeout: Number(process.env.HEALTH_DB_CONNECT_TIMEOUT_MS || 5000)
+  })
+
+  prismaHealthClient = new PrismaClient({ adapter })
+  return prismaHealthClient
+}
+
+function setHealthHeaders(res) {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+  res.set('Pragma', 'no-cache')
+  res.set('Expires', '0')
+  res.set('Surrogate-Control', 'no-store')
+}
+
+async function runHealthDatabaseCheck() {
+  const prisma = getHealthPrismaClient()
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error(`Health database check timed out after ${HEALTH_DB_TIMEOUT_MS}ms`)), HEALTH_DB_TIMEOUT_MS)
+  })
+
+  await Promise.race([
+    prisma.$queryRaw`SELECT 1`,
+    timeoutPromise
+  ])
+
+  healthState.checkedAt = Date.now()
+  healthState.isConnected = true
+
+  return true
+}
+
+async function refreshHealthDatabaseStatus() {
+  if (healthState.inFlightCheck) {
+    return healthState.inFlightCheck
+  }
+
+  healthState.inFlightCheck = runHealthDatabaseCheck()
+    .catch(() => {
+      healthState.checkedAt = Date.now()
+      healthState.isConnected = false
+      return false
+    })
+    .finally(() => {
+      healthState.inFlightCheck = null
+    })
+
+  return healthState.inFlightCheck
+}
+
+async function getHealthDatabaseStatus() {
+  if (!healthState.checkedAt) {
+    return refreshHealthDatabaseStatus()
+  }
+
+  const cacheAge = Date.now() - healthState.checkedAt
+  if (cacheAge >= HEALTH_CACHE_TTL_MS && !healthState.inFlightCheck) {
+    void refreshHealthDatabaseStatus()
+  }
+
+  return healthState.isConnected
+}
 
 // Tiny startup/runtime logger for cPanel environments.
 const startupLogDir = path.join(__dirname, 'tmp')
@@ -129,8 +217,26 @@ app.get('/', (req, res) => {
   res.send('Backend running successfully 🚀')
 })
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() })
+app.get('/health', async (req, res) => {
+  setHealthHeaders(res)
+
+  try {
+    const isDatabaseConnected = await getHealthDatabaseStatus()
+    return res.status(isDatabaseConnected ? 200 : 503).json({
+      status: isDatabaseConnected ? 'ok' : 'error',
+      uptime: Number(process.uptime().toFixed(3)),
+      timestamp: new Date().toISOString(),
+      database: isDatabaseConnected ? 'connected' : 'disconnected'
+    })
+  } catch (error) {
+    console.error('Health endpoint failed unexpectedly:', error.message)
+    return res.status(503).json({
+      status: 'error',
+      uptime: Number(process.uptime().toFixed(3)),
+      timestamp: new Date().toISOString(),
+      database: 'disconnected'
+    })
+  }
 })
 
 // Test endpoint
