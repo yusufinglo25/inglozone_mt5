@@ -3,8 +3,6 @@ const express = require('express')
 const cors = require('cors')
 const path = require('path')
 const fs = require('fs')
-const { PrismaClient } = require('@prisma/client')
-const { PrismaMariaDb } = require('@prisma/adapter-mariadb')
 const { swaggerUi, getSwaggerSpec } = require('./src/config/swagger')
 const jwt = require('jsonwebtoken')
 
@@ -26,6 +24,8 @@ function getHealthPrismaClient() {
     return prismaHealthClient
   }
 
+  const { PrismaClient } = require('./src/generated/prisma-client')
+  const { PrismaMariaDb } = require('@prisma/adapter-mariadb')
   const adapter = new PrismaMariaDb({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
@@ -71,7 +71,8 @@ async function refreshHealthDatabaseStatus() {
   }
 
   healthState.inFlightCheck = runHealthDatabaseCheck()
-    .catch(() => {
+    .catch((error) => {
+      console.error('Health database check failed:', error.message)
       healthState.checkedAt = Date.now()
       healthState.isConnected = false
       return false

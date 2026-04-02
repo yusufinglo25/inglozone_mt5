@@ -1,6 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
-  output   = "../src/generated/prisma-client"
+  provider   = "prisma-client-js"
+  output     = "../src/generated/prisma-client"
   engineType = "client"
 }
 
@@ -323,37 +323,37 @@ model trading_accounts {
 }
 
 model transactions {
-  id                   String                         @id @db.VarChar(36)
-  transaction_number   String?                        @unique(map: "uk_transactions_transaction_number") @db.VarChar(15)
-  user_id              String                         @db.VarChar(36)
-  wallet_id            String?                        @db.VarChar(36)
-  withdrawal_account_id String?                       @db.VarChar(36)
-  type                 transactions_type
-  amount               Decimal                        @db.Decimal(15, 2)
-  local_amount         Decimal?                       @db.Decimal(15, 2)
-  local_currency_code  String?                        @db.VarChar(10)
-  usd_to_local_rate    Decimal?                       @db.Decimal(18, 6)
-  currency             String?                        @default("USD") @db.VarChar(10)
-  status               transactions_status?           @default(pending)
-  payment_id           String?                        @db.VarChar(255)
-  session_id           String?                        @db.VarChar(255)
-  reference_number     String?                        @db.VarChar(128)
-  payment_provider     transactions_payment_provider?
-  payment_method       transactions_payment_method?
-  country_code         String?                        @db.Char(2)
-  stripe_payment_id    String?                        @db.VarChar(255)
-  stripe_session_id    String?                        @db.VarChar(255)
-  description          String?                        @db.Text
-  review_reason        String?                        @db.Text
-  reviewed_by          String?                        @db.VarChar(36)
-  reviewed_at          DateTime?                      @db.Timestamp(0)
-  metadata             String?                        @db.LongText
-  created_at           DateTime?                      @default(now()) @db.Timestamp(0)
-  updated_at           DateTime?                      @default(now()) @db.Timestamp(0)
-  bank_transfer_proofs bank_transfer_proofs?
-  user_withdrawal_accounts user_withdrawal_accounts?  @relation(fields: [withdrawal_account_id], references: [id], onUpdate: Restrict, map: "fk_transactions_withdrawal_account")
-  users                users                          @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "transactions_ibfk_1")
-  wallets              wallets?                       @relation(fields: [wallet_id], references: [id], onUpdate: Restrict, map: "transactions_ibfk_2")
+  id                       String                         @id @db.VarChar(36)
+  transaction_number       String?                        @unique(map: "uk_transactions_transaction_number") @db.VarChar(15)
+  user_id                  String                         @db.VarChar(36)
+  wallet_id                String?                        @db.VarChar(36)
+  withdrawal_account_id    String?                        @db.VarChar(36)
+  type                     transactions_type
+  amount                   Decimal                        @db.Decimal(15, 2)
+  local_amount             Decimal?                       @db.Decimal(15, 2)
+  local_currency_code      String?                        @db.VarChar(10)
+  usd_to_local_rate        Decimal?                       @db.Decimal(18, 6)
+  currency                 String?                        @default("USD") @db.VarChar(10)
+  status                   transactions_status?           @default(pending)
+  payment_id               String?                        @db.VarChar(255)
+  session_id               String?                        @db.VarChar(255)
+  reference_number         String?                        @db.VarChar(128)
+  payment_provider         transactions_payment_provider?
+  payment_method           transactions_payment_method?
+  country_code             String?                        @db.Char(2)
+  stripe_payment_id        String?                        @db.VarChar(255)
+  stripe_session_id        String?                        @db.VarChar(255)
+  description              String?                        @db.Text
+  review_reason            String?                        @db.Text
+  reviewed_by              String?                        @db.VarChar(36)
+  reviewed_at              DateTime?                      @db.Timestamp(0)
+  metadata                 String?                        @db.LongText
+  created_at               DateTime?                      @default(now()) @db.Timestamp(0)
+  updated_at               DateTime?                      @default(now()) @db.Timestamp(0)
+  bank_transfer_proofs     bank_transfer_proofs?
+  user_withdrawal_accounts user_withdrawal_accounts?      @relation(fields: [withdrawal_account_id], references: [id], onUpdate: Restrict, map: "fk_transactions_withdrawal_account")
+  users                    users                          @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "transactions_ibfk_1")
+  wallets                  wallets?                       @relation(fields: [wallet_id], references: [id], onUpdate: Restrict, map: "transactions_ibfk_2")
 
   @@index([withdrawal_account_id], map: "idx_transactions_withdrawal_account")
   @@index([reference_number], map: "idx_transactions_reference_number")
@@ -367,23 +367,23 @@ model transactions {
 }
 
 model user_withdrawal_accounts {
-  id                 String                        @id @db.VarChar(36)
-  user_id            String                        @db.VarChar(36)
-  country_code       String                        @db.Char(2)
-  method             user_withdrawal_accounts_method
-  label              String?                       @db.VarChar(100)
-  account_holder_name String?                      @db.VarChar(150)
-  upi_id             String?                       @db.VarChar(150)
-  bank_name          String?                       @db.VarChar(150)
-  account_number     String?                       @db.VarChar(100)
-  ifsc_code          String?                       @db.VarChar(20)
-  iban               String?                       @db.VarChar(50)
-  is_default         Boolean?                      @default(false)
-  is_active          Boolean?                      @default(true)
-  created_at         DateTime?                     @default(now()) @db.Timestamp(0)
-  updated_at         DateTime?                     @default(now()) @db.Timestamp(0)
-  transactions       transactions[]
-  users              users                         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_withdrawal_account_user")
+  id                  String                          @id @db.VarChar(36)
+  user_id             String                          @db.VarChar(36)
+  country_code        String                          @db.Char(2)
+  method              user_withdrawal_accounts_method
+  label               String?                         @db.VarChar(100)
+  account_holder_name String?                         @db.VarChar(150)
+  upi_id              String?                         @db.VarChar(150)
+  bank_name           String?                         @db.VarChar(150)
+  account_number      String?                         @db.VarChar(100)
+  ifsc_code           String?                         @db.VarChar(20)
+  iban                String?                         @db.VarChar(50)
+  is_default          Boolean?                        @default(false)
+  is_active           Boolean?                        @default(true)
+  created_at          DateTime?                       @default(now()) @db.Timestamp(0)
+  updated_at          DateTime?                       @default(now()) @db.Timestamp(0)
+  transactions        transactions[]
+  users               users                           @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_withdrawal_account_user")
 
   @@index([user_id, is_active], map: "idx_withdrawal_account_user_active")
   @@index([country_code, method], map: "idx_withdrawal_account_country_method")
@@ -434,39 +434,39 @@ model user_sessions {
 }
 
 model users {
-  id                                             String                 @id @db.VarChar(36)
-  first_name                                     String?                @db.VarChar(100)
-  last_name                                      String?                @db.VarChar(100)
-  email                                          String                 @unique(map: "email") @db.VarChar(255)
-  password_hash                                  String?                @db.VarChar(255)
-  mobile                                         String?                @db.VarChar(20)
-  google_id                                      String?                @db.VarChar(255)
-  is_2fa_enabled                                 Boolean?               @default(false)
-  profile_completed                              Boolean?               @default(false)
-  created_at                                     DateTime?              @default(now()) @db.Timestamp(0)
-  is_verified                                    Boolean?               @default(false)
-  password_set                                   Boolean?               @default(true)
-  avatar_url                                     String?                @db.VarChar(500)
-  provider                                       String?                @default("local") @db.VarChar(50)
-  email_verified                                 Boolean?               @default(false)
-  verified_at                                    DateTime?              @db.Timestamp(0)
-  two_fa_secret_encrypted                        String?                @db.Text
-  two_fa_secret_iv                               String?                @db.VarChar(64)
-  two_fa_temp_secret_encrypted                   String?                @db.Text
-  two_fa_temp_secret_iv                          String?                @db.VarChar(64)
-  two_fa_temp_expires_at                         DateTime?              @db.Timestamp(0)
-  account_type                                   users_account_type     @default(trader)
-  auth_version                                   Int                    @default(1)
-  registration_country_code                      String?                @default("AE") @db.Char(2)
-  registration_country_name                      String?                @db.VarChar(100)
-  registration_currency_code                     String?                @default("USD") @db.VarChar(10)
+  id                                             String                     @id @db.VarChar(36)
+  first_name                                     String?                    @db.VarChar(100)
+  last_name                                      String?                    @db.VarChar(100)
+  email                                          String                     @unique(map: "email") @db.VarChar(255)
+  password_hash                                  String?                    @db.VarChar(255)
+  mobile                                         String?                    @db.VarChar(20)
+  google_id                                      String?                    @db.VarChar(255)
+  is_2fa_enabled                                 Boolean?                   @default(false)
+  profile_completed                              Boolean?                   @default(false)
+  created_at                                     DateTime?                  @default(now()) @db.Timestamp(0)
+  is_verified                                    Boolean?                   @default(false)
+  password_set                                   Boolean?                   @default(true)
+  avatar_url                                     String?                    @db.VarChar(500)
+  provider                                       String?                    @default("local") @db.VarChar(50)
+  email_verified                                 Boolean?                   @default(false)
+  verified_at                                    DateTime?                  @db.Timestamp(0)
+  two_fa_secret_encrypted                        String?                    @db.Text
+  two_fa_secret_iv                               String?                    @db.VarChar(64)
+  two_fa_temp_secret_encrypted                   String?                    @db.Text
+  two_fa_temp_secret_iv                          String?                    @db.VarChar(64)
+  two_fa_temp_expires_at                         DateTime?                  @db.Timestamp(0)
+  account_type                                   users_account_type         @default(trader)
+  auth_version                                   Int                        @default(1)
+  registration_country_code                      String?                    @default("AE") @db.Char(2)
+  registration_country_name                      String?                    @db.VarChar(100)
+  registration_currency_code                     String?                    @default("USD") @db.VarChar(10)
   bank_transfer_proofs                           bank_transfer_proofs[]
   investor_accounts                              investor_accounts?
   kyc_audit_logs                                 kyc_audit_logs[]
-  kyc_documents_kyc_documents_user_idTousers     kyc_documents[]        @relation("kyc_documents_user_idTousers")
-  kyc_documents_kyc_documents_reviewed_byTousers kyc_documents[]        @relation("kyc_documents_reviewed_byTousers")
-  kyc_profiles_kyc_profiles_user_idTousers       kyc_profiles?          @relation("kyc_profiles_user_idTousers")
-  kyc_profiles_kyc_profiles_reviewed_byTousers   kyc_profiles[]         @relation("kyc_profiles_reviewed_byTousers")
+  kyc_documents_kyc_documents_user_idTousers     kyc_documents[]            @relation("kyc_documents_user_idTousers")
+  kyc_documents_kyc_documents_reviewed_byTousers kyc_documents[]            @relation("kyc_documents_reviewed_byTousers")
+  kyc_profiles_kyc_profiles_user_idTousers       kyc_profiles?              @relation("kyc_profiles_user_idTousers")
+  kyc_profiles_kyc_profiles_reviewed_byTousers   kyc_profiles[]             @relation("kyc_profiles_reviewed_byTousers")
   kyc_records                                    kyc_records?
   risk_profiles                                  risk_profiles?
   transactions                                   transactions[]
