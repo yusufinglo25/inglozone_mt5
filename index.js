@@ -129,10 +129,6 @@ app.get('/', (req, res) => {
   res.send('Backend running successfully 🚀')
 })
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() })
-})
-
 // Test endpoint
 app.get('/api/test-cors', (req, res) => {
   res.json({
@@ -154,8 +150,10 @@ const kycRoutes = require('./src/routes/kyc.routes')
 const adminRoutes = require('./src/routes/admin.routes')
 const settingsRoutes = require('./src/routes/settings.routes')
 const matchTraderRoutes = require('./src/routes/matchtrader.routes')
+const healthRoutes = require('./src/routes/health.routes')
 
 // Use routes
+app.use('/', healthRoutes)
 app.use('/api/user', userRoutes)
 app.use('/api/accounts', accountRoutes)
 app.use('/api/auth', authRoutes)
